@@ -62,3 +62,19 @@ Task: allow npx in loop. PRD items: none (enables F7 verification).
 Decisions: added Bash(npx:*) to $AllowedTools so agent can launch chrome-devtools-mcp for real F7/F8 checks.
 Files: ralph-hitl.ps1
 Notes for next: npx:* allows any npm package; only use npx chrome-devtools-mcp@latest.
+
+## 2026-11-06 — manual commits
+Task: user commits manually. PRD items: none.
+Decisions:
+- loop: removed git add/commit from AllowedTools; prompt says never add/commit/push, print "Suggested commit: ..." line
+- progress signal = progress.txt hash change (not new commit); stall after 3 unchanged
+- after each iteration loop shows git status --short + suggested commit; pause asks user to commit in another terminal
+- CLAUDE.md: git rule added (read-only git only)
+Files: ralph-hitl.ps1, CLAUDE.md
+Notes for next: keep Gate='each' so changes don't pile up uncommitted
+
+## 2026-11-06 — pre-loop check
+Task: readiness check before first loop run. PRD items: F33 partly (gitignore), not flipped.
+Decisions: .gitignore += cv/* (except cv/original_cv.example.md) + output/, verified with git check-ignore. .env already present + ignored (AWS creds, BEDROCK_MODEL_ID, AWS_REGION).
+Env OK: python 3.13, pytest 9.2, node 24, claude 2.1.319.
+Notes for next: .env lacks ALLOWED_JOB_SITES, MAX_TOKENS_PER_CALL etc. — add to .env.example; user adds real values to .env (do not overwrite user's .env). Real CV may be absent -> use cv/original_cv.example.md for checks.

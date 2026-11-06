@@ -27,5 +27,7 @@
   BEDROCK_MODEL_ID, AWS_REGION and every other setting from env vars, never hard-coded.
 - The browser is reached only through the Chrome DevTools MCP server (Python `mcp` SDK, stdio).
   Enforce the MCP tool allowlist and the ALLOWED_JOB_SITES check in code, not only in prompts.
+- Git: never run `git add`, `git commit` or `git push`. The user reviews and commits manually.
+  Read-only git (`status`, `diff`, `log`) is fine. Suggest a commit message when work is done.
 - Never commit personal data: `cv/`, `output/` and `.env` are git-ignored.
 - Comment only the non-obvious AI/SDK bits — skip the obvious.

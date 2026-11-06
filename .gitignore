@@ -3,6 +3,11 @@
 # Deploy-only AWS keys, for lessons that deploy to AWS — kept apart from .env. Never commit.
 .env.deploy
 
+# Personal data: real CV/profile and generated applications. Commit cv/original_cv.example.md only.
+cv/*
+!cv/original_cv.example.md
+output/
+
 # Python
 __pycache__/
 *.py[cod]
