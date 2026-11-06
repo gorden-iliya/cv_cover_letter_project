@@ -146,7 +146,7 @@
       "Run tailoring and verify must-mention items appear and never-mention items do not",
       "Remove the Length limits section and verify the run still works with no length constraint"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",

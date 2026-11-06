@@ -118,6 +118,23 @@ def test_missing_profile_means_no_constraints(tmp_path, fake_converse):
     assert "<profile>\n(no profile: no constraints)\n</profile>" in prompt
 
 
+FULL_PROFILE = ("## Tone\nwarm\n\n## Language\nEnglish\n\n## Length limits\nletter <= 150 words\n\n"
+                "## Must mention\nopen to relocation\n\n## Never mention\nsalary\n\n"
+                "## Target roles\nDevOps\n\n## Companies to avoid\nInitech\n")
+
+
+@pytest.mark.parametrize("profile", [FULL_PROFILE, FULL_PROFILE.replace("## Length limits\nletter <= 150 words\n\n", "")])
+def test_all_profile_sections_reach_letter_and_missing_section_still_works(tmp_path, fake_converse, profile):
+    profile_path = tmp_path / "profile.md"
+    profile_path.write_text(profile, encoding="utf-8")
+    result = tailor_application.handle(_settings(tmp_path, profile_path=str(profile_path)), JOB)
+    letter_call = fake_converse[1]
+    prompt = letter_call["messages"][0]["content"][0]["text"]
+    assert "<profile>\n" + profile.strip() + "\n</profile>" in prompt
+    assert "Must mention" in letter_call["system"] and "missing or empty means no constraint" in letter_call["system"]
+    assert result["cover_letter"]
+
+
 def test_letter_feedback_and_fixes_are_in_prompt(tmp_path, fake_converse):
     tailor_application.generate_letter(_settings(tmp_path), "CV", JOB, "", feedback="shorter", fixes=["name company"])
     prompt = fake_converse[0]["messages"][0]["content"][0]["text"]
