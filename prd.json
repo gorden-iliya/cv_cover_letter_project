@@ -18,7 +18,7 @@
       "Start the app",
       "Verify the defaults are 2, false, cv/original_cv.md, cv/profile.md and output"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "configuration",

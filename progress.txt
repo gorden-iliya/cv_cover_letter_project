@@ -95,3 +95,14 @@ Notes for next:
 - `mcp` python package not installed (pip install -r requirements.txt) — needed by slice 5
 - verify F1/F2-style steps via temp copy (find_dotenv walks up from agent/config.py, so tests patch config.load_dotenv)
 - next: F2 (optional defaults) — logic + tests already exist (test_optional_defaults), just run its steps
+
+## 2026-11-06 — F2
+Task: F2 "Optional settings fall back to documented defaults" -> passes=true.
+Decisions:
+- no code change; logic + test_optional_defaults already from F1 iteration
+- verified via one-off script outside repo (%TEMP%/verify_f2.py): temp copy of agent/+main.py, .env = .env.example minus 5 optional keys, optional vars stripped from process env -> main.py exit 0; load_settings -> 2, False, cv/original_cv.md, cv/profile.md, output
+- main.py does not print the optional values (no spec for startup output) — verified through load_settings in the same temp app
+Files: prd.json, progress.txt
+Notes for next:
+- PowerShell tool blocks `python -m pytest`; use Bash tool (cd to project && python -m pytest -q). Long quoted bash one-liners also blocked -> write helper script to %TEMP%
+- next: F3 (single Bedrock converse fn) — client.converse exists, but F3 step needs chat agent/extractor/generators/validator callers; only CV generator in slice 1 -> verify F3 when all callers exist (end of slice 3/5), or now partially and leave false. Next slice-1 items: F4 (chat), F5 (missing CV), F6 (toolConfig, tailor_application only), F11, F12
