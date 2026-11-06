@@ -5,10 +5,16 @@
 # NEXT iteration happens. Gating individual file edits does not work in a loop:
 # the prompt would block forever with nobody at the keyboard.
 #
+# Commits are MANUAL. The agent never runs git add/commit/push; it leaves its changes
+# uncommitted. At each pause, review them (git status / git diff) and commit yourself.
+#
 # Gate modes:
-#   'each'    pause after every iteration (review the commit, then continue)
-#   'every:N' pause after every N iterations
+#   'each'    pause after every iteration (review + commit, then continue)  <- recommended
+#   'every:N' pause after every N iterations (N iterations of changes pile up uncommitted)
 #   'blocked' never pause; stop only on DONE, BLOCKED, failing tests, a stall, or MaxIterations
+#
+# Progress = progress.txt changed. Every iteration must append to it, so an unchanged
+# progress.txt means the iteration did nothing.
 #
 # Docs and code live in the same folder (this script's folder):
 #   CLAUDE.md      conventions + prd.json / progress.txt rules (read automatically by claude)
@@ -23,8 +29,10 @@ $Repo          = $PSScriptRoot
 $Prd           = Join-Path $Repo 'prd.json'
 $MaxIterations = 15
 $Gate          = 'each'
-$StallLimit    = 3          # consecutive iterations with no new commit before giving up
-$AllowedTools  = 'Read,Edit,Write,Glob,Grep,Bash(python:*),Bash(pip:*),Bash(npx:*),Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)'
+$StallLimit    = 3          # consecutive iterations with no progress.txt change before giving up
+# Read-only git only: no add, commit or push.
+$AllowedTools  = 'Read,Edit,Write,Glob,Grep,Bash(python:*),Bash(pip:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)'
+$ProgressFile  = Join-Path $Repo 'progress.txt'
 
 # Features verified by a human in the manual end-to-end slice (slice 9). The agent never
 # sets these to passes=true; the loop stops with BLOCKED once only these remain.
@@ -107,7 +115,9 @@ Do exactly one iteration:
 4. Run python -m pytest -q. Fix until it passes.
 5. Run every step of that feature. Only if all steps work, set its passes to true.
 6. Append an entry to progress.txt (format in CLAUDE.md).
-7. git add and git commit locally with a short message naming the feature. Do not push.
+7. Do NOT run git add, git commit or git push. Leave all changes uncommitted; the human
+   reviews and commits them. End your output with a one-line suggested commit message,
+   prefixed with "Suggested commit: ".
 
 These features are verified by a human. Never set them to passes=true:
 $hitlList
@@ -125,8 +135,7 @@ $stall = 0
 
 for ($i = 1; $i -le $MaxIterations; $i++) {
     Write-Host "`n=== Iteration $i of $MaxIterations ===" -ForegroundColor Cyan
-    $before = (git rev-parse HEAD 2>$null)
-    if ($before) { $before = $before.Trim() }
+    $before = (Get-FileHash $ProgressFile).Hash
 
     # Prompt goes in on stdin. Tee-Object shows output live AND captures it; a bare
     # assignment would leave you staring at a blank console for minutes per iteration.
@@ -143,7 +152,7 @@ for ($i = 1; $i -le $MaxIterations; $i++) {
 
     # Independent check: run every test, not just the ones the agent says it ran.
     if (-not (Invoke-Tests)) {
-        Write-Host 'Stopping: tests fail after this iteration. Review the last commit.' -ForegroundColor Red
+        Write-Host 'Stopping: tests fail after this iteration. Review the uncommitted changes (git diff).' -ForegroundColor Red
         break
     }
 
@@ -158,11 +167,10 @@ for ($i = 1; $i -le $MaxIterations; $i++) {
         break
     }
 
-    $after = (git rev-parse HEAD 2>$null)
-    if ($after) { $after = $after.Trim() }
+    $after = (Get-FileHash $ProgressFile).Hash
     if ($before -eq $after) {
         $stall++
-        Write-Host "No commit this iteration ($stall/$StallLimit)." -ForegroundColor Yellow
+        Write-Host "No progress.txt entry this iteration ($stall/$StallLimit)." -ForegroundColor Yellow
         if ($stall -ge $StallLimit) {
             Write-Host "Stalled - no progress in $StallLimit iterations. Stopping." -ForegroundColor Red
             break
@@ -170,11 +178,16 @@ for ($i = 1; $i -le $MaxIterations; $i++) {
     }
     else {
         $stall = 0
-        Write-Host ("Committed: " + (git log -1 --oneline)) -ForegroundColor Green
     }
 
+    # Show what this iteration left for the human to review and commit.
+    Write-Host "`n--- uncommitted changes ---" -ForegroundColor Cyan
+    git status --short
+    $suggested = $outLines | Where-Object { $_ -match '^\s*Suggested commit:' } | Select-Object -Last 1
+    if ($suggested) { Write-Host $suggested.Trim() -ForegroundColor Green }
+
     if ($PauseEvery -gt 0 -and ($i % $PauseEvery) -eq 0 -and $i -lt $MaxIterations) {
-        Write-Host "`nReview the commit above."
+        Write-Host "`nReview the changes (git diff), commit them yourself in another terminal, then continue."
         $answer = Read-Host "[Enter] continue  /  (s)top pausing  /  (q)uit"
         if ($answer -eq 'q') { Write-Host 'Stopped by user.' -ForegroundColor Yellow; break }
         if ($answer -eq 's') { $PauseEvery = 0; Write-Host 'Running unattended from here.' -ForegroundColor DarkGray }
