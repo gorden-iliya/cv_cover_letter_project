@@ -116,7 +116,7 @@
       "Compare the tailored CV with the original",
       "Verify every employer, title, date, degree and number in the tailored CV exists in the original"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
