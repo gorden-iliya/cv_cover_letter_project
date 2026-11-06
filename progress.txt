@@ -1,0 +1,64 @@
+# progress.txt — append-only log, newest at bottom
+
+## 2026-11-06 — design phase (no code yet)
+Task: system design via grill session on ../job seeker skill/prd.md. PRD items: none implemented, all prd.json passes=false.
+Decisions:
+- standalone Python agent, Bedrock Converse, SDD style (not a Claude Code skill) — real app, not homework prompt
+- browser = Chrome DevTools MCP, agent is MCP client (python mcp SDK, stdio) — reuse tutorial server
+- v1 public job pages only, LinkedIn v2 — no login/ToS issues
+- fetch_job(url) = fixed code sequence, model never drives browser in v1; direct MCP tools v2 (job search)
+- server: --isolated, visible window, risky categories off, --no-javascript-evaluation; python allowlist navigate_page/new_page/take_snapshot/click/wait_for/list_pages
+- ALLOWED_JOB_SITES in .env, checked before nav + after redirect; job URL comes from chat, not .env
+- fetch fail -> ask user to paste job text
+- one job per run; terminal chat; print + save, never send
+- fixed pipeline CV -> letter -> validator (separate call, sees original CV), validator JSON, max 2 rounds, regen only failing doc (letter follows CV), best attempt shown if cap hit
+- one model for all calls; fact check = validator only (no rule-based check v1)
+- re-prompt -> tailor_application(target=cv|letter|both), always revalidate
+- output/<company>_<role>/vN/ (job.md, cv.md, cover_letter.md, validation_round_N.json)
+- job text wrapped in <job_posting>, validator flags prompt_injection
+- tests: pytest w/ fake Bedrock+MCP, one manual e2e
+Files: prd.md (system design), prd.json (36 features), AGENT_SPEC.md (agent), CLAUDE.md (conventions), progress.txt
+Notes for next:
+- AGENT_SPEC.md has 7 details filled in without user review (PASS blocking rule, JSON retry, best-attempt rule, subdomain match, re-prompt base, new URL = new folder, missing profile heading = no constraint) — confirm w/ user
+- open: keep prd.md alongside prd.json? (recommended: keep)
+- not done: copy SDD/ skills + schema-smith + nested CLAUDE.md, git init, .gitignore, .env.example, cv/original_cv.example.md
+- chrome-devtools MCP installed in Claude Code user scope (dev aid only; app starts its own server via npx)
+
+## 2026-11-06 — dedupe docs
+Task: remove duplicates between prd.md and AGENT_SPEC.md. PRD items: none.
+Decisions:
+- prd.md = system level (scope, architecture, MCP flags, .env, principles, testing strategy, metrics, roadmap)
+- AGENT_SPEC.md = agent details (rules, tools, inputs/profile, validator JSON, output files, terminal output, steps)
+- prd.md FR list removed -> prd.json is the feature list
+- prd.md has doc map table at top
+Files: prd.md (rewritten), AGENT_SPEC.md (header, dropped dup "one job per run", §ref fix), CLAUDE.md (source-of-truth lines)
+Notes for next: /prd-to-issues breakdown proposed (10 slices), awaiting user approval + GitHub repo decision
+
+## BUILD ORDER (approved slices; F<n> = nth item in prd.json, 1-based)
+Do slices in order; a slice starts only when its blockers are done. Unit tests (F35) part of every slice.
+1. Tracer: pasted job text -> tailored CV printed + saved v1/ (+ repo scaffold from ../SDD template, .env.example, .gitignore, single Bedrock fn) | blocked: none | F1 F2 F3 F4 F5 F6(tailor_application only) F11 F12 F22(partial) F24 F25(partial) F33
+2. Cover letter from tailored CV + job + profile.md | blocked: 1 | F13 F14
+3. Validator one round, JSON verdict, fit summary + gaps | blocked: 2 | F15 F16 F17
+4. Critic loop: cap, regen failing docs only, best attempt + unresolved issues | blocked: 3 | F18 F19 F22 F23
+5. fetch_job(url) via Chrome DevTools MCP (server flags + tool allowlist) | blocked: 1 | F6 F7 F8 F9 F25 F30 F31
+6. fetch_job hardening: ALLOWED_JOB_SITES, redirect re-check, http/https only, paste-text fallback | blocked: 5 | F10 F27 F28 F29
+7. Prompt-injection protection | blocked: 3, 5 | F32
+8. Re-prompts + new URL = new job | blocked: 4 | F20 F21
+9. HITL manual e2e acceptance (human only) | blocked: 4, 6, 7, 8 | F26 F34 F36
+F35 (unit tests) passes when all AFK slices done and suite covers listed areas.
+
+## 2026-11-06 — loop script
+Task: adapt ralph-hitl.ps1 to this project. PRD items: none.
+Decisions:
+- docs + code same folder ($PSScriptRoot); dropped AGENTS.md/human-answers.md/domain-facts.md/issues refs; questions go to progress.txt + BLOCKED sentinel
+- loop runs pytest itself after each iteration (exit 5 = no tests yet = ok); stops on failure
+- F26/F34/F36 human-verified, agent never flips them
+- --allowedTools limited to python/pip/git add|commit|status|diff|log; no push
+Files: ralph-hitl.ps1, progress.txt (build order added)
+Notes for next: needs git repo + non-main branch before first run (user creating GitHub repo)
+
+## 2026-11-06 — loop permissions
+Task: allow npx in loop. PRD items: none (enables F7 verification).
+Decisions: added Bash(npx:*) to $AllowedTools so agent can launch chrome-devtools-mcp for real F7/F8 checks.
+Files: ralph-hitl.ps1
+Notes for next: npx:* allows any npm package; only use npx chrome-devtools-mcp@latest.
