@@ -10,6 +10,7 @@ from prompts.validator import VALIDATOR_SYSTEM, build_validator_prompt
 VERDICTS = ("PASS", "FAIL")
 DOCS = ("cv", "letter")
 ISSUE_TYPES = ("invented_fact", "missing_keyword", "tone", "length", "profile_rule", "prompt_injection")
+BLOCKING_TYPES = ("invented_fact", "profile_rule", "prompt_injection")  # PASS not allowed with these
 
 
 class ValidatorParseError(ValueError):
@@ -51,6 +52,10 @@ def parse_validation(text: str) -> dict:
     _require(isinstance(summary, str), "fit_summary must be a string")
     gaps = data.get("gaps")
     _require(isinstance(gaps, list) and all(isinstance(g, str) for g in gaps), "gaps must be a list of strings")
+
+    # The model may say PASS while listing blocking issues; code has the final word.
+    if verdict == "PASS" and any(i["type"] in BLOCKING_TYPES for i in clean_issues):
+        verdict = "FAIL"
 
     return {"verdict": verdict, "fit_score": score, "issues": clean_issues,
             "fit_summary": summary, "gaps": gaps}
