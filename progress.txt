@@ -160,3 +160,16 @@ Decisions:
 Files: tests/test_gitignore.py, prd.json, progress.txt
 Notes for next:
 - slice 1 left: F3 (needs all callers, slices 3/5), F6 (needs fetch_job, slice 5), F12 (needs re-prompts, slice 8), F22/F24/F25 partial -> done in slice 4. Move to slice 2: F13 (letter generator), then F14
+
+## 2026-11-06 — F13
+Task: F13 "Cover letter is generated from the tailored CV, the job and the profile" -> passes=true.
+Decisions:
+- prompts/letter_generator.py: system = truthfulness + name company + profile rules (Tone/Language/Length limits, Must/Never mention; missing heading = no constraint); prompt = <tailored_cv> + job_block (<job_posting>) + <profile> (+ <user_feedback>, <validator_fixes>)
+- agent/profile.py read_profile: missing PROFILE_PATH file -> "" (prompt says "(no profile: no constraints)"). Spec only says missing headings = no constraint; extended to missing file (my choice, confirm w/ user if it should be an error)
+- tailor_application.handle: CV gen -> letter gen (from tailored CV, not original) -> writes cover_letter.md, returns cover_letter. target still unused (slice 8)
+- profile passed raw to the model, no heading parsing in code (enough for F14 unless validator needs it)
+- verified: pytest 39 pass + %TEMP%/verify_f13.py (real Bedrock, example CV, temp profile: friendly tone, English, <=150 words, must "Available to start in January", never "Salary") -> 2 calls, letter prompt has tailored CV + job + profile, letter 72 words, names Globex, must-mention present, no salary, no Go/GCP claimed
+Files: prompts/letter_generator.py, agent/profile.py, tools/tailor_application.py, tests/test_tailor_application.py, prd.json
+Notes for next:
+- Bash heredoc mangles "\\n" in python source -> use Edit for test files with escapes
+- next: F14 (profile sections applied; remove Length limits -> still works). Can reuse verify_f13.py w/ profile variants

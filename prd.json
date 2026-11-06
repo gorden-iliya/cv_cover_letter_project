@@ -136,7 +136,7 @@
       "Verify the letter generator prompt contains the tailored CV, the job and profile.md",
       "Verify the letter names the company and follows the profile's tone, language and length limit"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
