@@ -196,3 +196,12 @@ Files: agent/validator.py, prompts/validator.py, tools/tailor_application.py, te
 Notes for next:
 - QUALITY RISK: with BEDROCK_MODEL_ID=us.amazon.nova-2-lite-v1:0 the validator reports false invented_fact issues (said CV lists "Go"; cv.md has no Go, 3 runs). Prompt tweaks didn't fix it. Can make the critic loop always FAIL -> success metric (80% pass in 2 rounds) at risk. Human: consider a stronger model in .env. Not blocking unit-tested slices.
 - next: F16 (code overrides PASS if invented_fact/profile_rule/prompt_injection issues), then F17
+
+## 2026-11-06 — F16
+Task: F16 "Validator cannot pass while serious issues remain" -> passes=true.
+Decisions:
+- override lives in parse_validation (agent/validator.py, BLOCKING_TYPES) -> every caller + saved validation_round_N.json + rounds/passed see the corrected FAIL; minor types (missing_keyword/tone/length) don't block PASS
+- verified: pytest 59 pass + %TEMP%/verify_f16.py (real Bedrock validator, example CV + invented "Senior SRE — Google" role) -> 3/3 runs FAIL w/ 1 invented_fact naming Google; fake PASS+invented_fact reply -> FAIL
+Files: agent/validator.py, tests/test_tailor_application.py, prd.json, progress.txt
+Notes for next:
+- next: F17 (invalid validator JSON -> retry once, then FAIL round w/ one parse-error issue). Spec issue needs doc (cv|letter) + type enum for the parse-error issue -> spec silent on which; pick or ask

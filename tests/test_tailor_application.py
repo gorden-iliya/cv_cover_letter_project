@@ -192,6 +192,35 @@ def test_parse_validation_rejects_off_schema(reply):
         parse_validation(reply)
 
 
+@pytest.mark.parametrize("issue_type", ["invented_fact", "profile_rule", "prompt_injection"])
+def test_pass_with_blocking_issue_is_overridden_to_fail(issue_type):
+    issue = {"doc": "cv", "type": issue_type, "detail": "d", "fix": "f"}
+    parsed = parse_validation(json.dumps(dict(VALIDATION, verdict="PASS", issues=[issue])))
+    assert parsed["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize("issue_type", ["missing_keyword", "tone", "length"])
+def test_pass_with_minor_issue_stays_pass(issue_type):
+    issue = {"doc": "letter", "type": issue_type, "detail": "d", "fix": "f"}
+    parsed = parse_validation(json.dumps(dict(VALIDATION, verdict="PASS", issues=[issue])))
+    assert parsed["verdict"] == "PASS"
+
+
+def test_overridden_verdict_reaches_result_and_saved_file(tmp_path, monkeypatch):
+    reply = json.dumps(dict(VALIDATION, verdict="PASS", issues=[
+        {"doc": "cv", "type": "invented_fact", "detail": "employer 'Initech' not in original", "fix": "remove"}]))
+
+    def fake(settings, messages, system=None, tool_config=None):
+        text = reply if "strict reviewer" in system else "text"
+        return {"output": {"message": {"role": "assistant", "content": [{"text": text}]}}}
+
+    monkeypatch.setattr(client, "converse", fake)
+    result = tailor_application.handle(_settings(tmp_path), JOB)
+    assert result["passed"] is False and result["rounds"][0]["verdict"] == "FAIL"
+    saved = json.loads((Path(result["version_dir"]) / "validation_round_1.json").read_text(encoding="utf-8"))
+    assert saved["verdict"] == "FAIL"
+
+
 def test_letter_feedback_and_fixes_are_in_prompt(tmp_path, fake_converse):
     tailor_application.generate_letter(_settings(tmp_path), "CV", JOB, "", feedback="shorter", fixes=["name company"])
     prompt = fake_converse[0]["messages"][0]["content"][0]["text"]

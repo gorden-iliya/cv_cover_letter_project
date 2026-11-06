@@ -167,7 +167,7 @@
       "Verify an invented_fact issue is reported and the verdict is FAIL",
       "Verify code overrides any PASS that comes with invented_fact, profile_rule or prompt_injection issues"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
