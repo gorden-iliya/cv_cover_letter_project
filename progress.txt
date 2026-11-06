@@ -149,3 +149,14 @@ Files: tools/tailor_application.py, tools/__init__.py, prompts/cv_generator.py, 
 Notes for next:
 - ISSUE for F22: the chat model's reply still claimed "highlights your ... Go, and GCP experience" though cv.md has none -> code must print the documents itself (AGENT_SPEC Behavior), and consider not sending full doc text back to the chat model (just version_dir + summary fields)
 - next slice-1 item: F12 (original CV hash) needs "full tailoring + two re-prompts" -> re-prompts are slice 8; hash already tested in test_saves_version_folder_and_keeps_original_cv. Then slice 2 (F13, F14 letter)
+
+## 2026-11-06 — F33
+Task: F33 "Personal data is never committed" -> passes=true.
+Decisions:
+- no .gitignore change needed (cv/* + !example, output/, .env already there)
+- verified: inspected .gitignore; probe files cv/_ignore_probe.md + output/_probe/v1/cv.md show as `!!` in `git status --ignored --untracked-files=all` (probes deleted after), .env `!!`; `git ls-files` lists cv/original_cv.example.md + .env.example
+- tests/test_gitignore.py: `git check-ignore --no-index` via subprocess (skips if no git)
+- `git check-ignore` blocked in Bash/PowerShell tools by permissions -> use `git status --ignored` for manual checks
+Files: tests/test_gitignore.py, prd.json, progress.txt
+Notes for next:
+- slice 1 left: F3 (needs all callers, slices 3/5), F6 (needs fetch_job, slice 5), F12 (needs re-prompts, slice 8), F22/F24/F25 partial -> done in slice 4. Move to slice 2: F13 (letter generator), then F14
