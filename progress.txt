@@ -134,3 +134,18 @@ Notes for next:
 - F6: build tools/tailor_application.py (CV generator only in slice 1, use read_original_cv), register in TOOLS; then F11, F12
 - Bash tool: heredoc appends (cat >> <<EOF) blocked -> use Edit
 - tests: main.chat_loop default read=input bound at def time -> wrap chat_loop to inject read
+
+## 2026-11-06 — F11
+Task: F11 "Tailored CV is generated from the original CV only" -> passes=true. tailor_application tool built (CV generator only).
+Decisions:
+- tools/tailor_application.py: TOOL_SPEC (job obj w/ required description, feedback, target enum) + handle(settings, job, feedback, target); generate_cv() calls client.converse (looked up at call time -> tests monkeypatch agent.client.converse); strips ``` fences; empty description -> ValueError (toolResult error)
+- returns {version_dir, cv, cover_letter: None} for now; validation/rounds/passed added slices 3-4; target accepted but unused until letter exists
+- prompts/cv_generator.py: system = truthfulness hard rules; job_block(job) wraps job in <job_posting> (reuse for letter/validator/extractor prompts); optional <user_feedback>, <validator_fixes>
+- agent/output.py: slugify, new_version_dir (vN = max+1, mkdir exist_ok=False), job_markdown, write_text. Missing company/title -> "unknown-company"/"unknown-role" in folder name (spec silent; my choice — confirm w/ user if it matters)
+- registered in tools.TOOLS -> F6 still false until fetch_job exists (slice 5)
+- chat prompt: pass pasted text as job.description + fill title/company/location; don't summarize docs after tool
+- verified: pytest 30 pass + %TEMP%/verify_f11.py (real Bedrock, example CV, pasted Globex job, OUTPUT_DIR temp) -> cv.md keeps all employers/titles/dates/degree/numbers, no Go/GCP added; example CV sha256 unchanged
+Files: tools/tailor_application.py, tools/__init__.py, prompts/cv_generator.py, prompts/chat_system.py, agent/output.py, tests/test_tailor_application.py, prd.json
+Notes for next:
+- ISSUE for F22: the chat model's reply still claimed "highlights your ... Go, and GCP experience" though cv.md has none -> code must print the documents itself (AGENT_SPEC Behavior), and consider not sending full doc text back to the chat model (just version_dir + summary fields)
+- next slice-1 item: F12 (original CV hash) needs "full tailoring + two re-prompts" -> re-prompts are slice 8; hash already tested in test_saves_version_folder_and_keeps_original_cv. Then slice 2 (F13, F14 letter)
