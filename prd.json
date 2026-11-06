@@ -157,7 +157,7 @@
       "Verify its prompt contains the tailored CV, letter, job, original CV and profile",
       "Verify the output parses into verdict, fit_score (1-10), issues (doc, type, detail, fix), fit_summary and gaps"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",

@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,7 @@ import pytest
 from agent import client
 from agent.config import Settings
 from agent.output import job_dir_name, new_version_dir, slugify
+from agent.validator import ValidatorParseError, parse_validation
 from tools import TOOLS, tailor_application
 
 EXAMPLE_CV = "cv/original_cv.example.md"
@@ -14,6 +16,12 @@ JOB = {"title": "Senior DevOps Engineer", "company": "Acme Corp!", "location": "
 
 
 PROFILE = "## Tone\nwarm\n\n## Language\nEnglish\n\n## Must mention\nopen to relocation\n"
+
+VALIDATION = {"verdict": "FAIL", "fit_score": 7,
+              "issues": [{"doc": "letter", "type": "missing_keyword", "detail": "no Terraform",
+                          "fix": "mention Terraform"}],
+              "fit_summary": "Strong Kubernetes background.", "gaps": ["Go"]}
+VALIDATION_REPLY = "```json\n" + json.dumps(VALIDATION) + "\n```"
 
 
 def _settings(tmp_path, cv_path=EXAMPLE_CV, profile_path=None):
@@ -27,7 +35,12 @@ def fake_converse(monkeypatch):
 
     def fake(settings, messages, system=None, tool_config=None):
         calls.append({"settings": settings, "messages": messages, "system": system, "tool_config": tool_config})
-        text = "Dear Acme Corp,\nLetter" if "cover letter" in system else "```markdown\n# Jane Doe\nTailored\n```"
+        if "strict reviewer" in system:
+            text = VALIDATION_REPLY
+        elif "cover letter" in system:
+            text = "Dear Acme Corp,\nLetter"
+        else:
+            text = "```markdown\n# Jane Doe\nTailored\n```"
         return {"stopReason": "end_turn",
                 "output": {"message": {"role": "assistant", "content": [{"text": text}]}}}
 
@@ -42,7 +55,7 @@ def test_tool_is_registered():
 
 def test_cv_prompt_contains_original_cv_and_wrapped_job(tmp_path, fake_converse):
     result = tailor_application.handle(_settings(tmp_path), JOB)
-    assert len(fake_converse) == 2  # CV generator, then letter generator
+    assert len(fake_converse) == 3  # CV generator, letter generator, validator
     call = fake_converse[0]
     prompt = call["messages"][0]["content"][0]["text"]
     original = Path(EXAMPLE_CV).read_text(encoding="utf-8")
@@ -100,7 +113,7 @@ def test_letter_prompt_contains_tailored_cv_job_and_profile(tmp_path, fake_conve
     profile_path = tmp_path / "profile.md"
     profile_path.write_text(PROFILE, encoding="utf-8")
     result = tailor_application.handle(_settings(tmp_path, profile_path=str(profile_path)), JOB)
-    cv_call, letter_call = fake_converse
+    cv_call, letter_call, _ = fake_converse
     assert "cover letter" in letter_call["system"] and "Never mention" in letter_call["system"]
     assert letter_call["settings"].bedrock_model_id == "model-x"
     prompt = letter_call["messages"][0]["content"][0]["text"]
@@ -133,6 +146,50 @@ def test_all_profile_sections_reach_letter_and_missing_section_still_works(tmp_p
     assert "<profile>\n" + profile.strip() + "\n</profile>" in prompt
     assert "Must mention" in letter_call["system"] and "missing or empty means no constraint" in letter_call["system"]
     assert result["cover_letter"]
+
+
+def test_validator_is_separate_call_with_all_inputs(tmp_path, fake_converse):
+    profile_path = tmp_path / "profile.md"
+    profile_path.write_text(PROFILE, encoding="utf-8")
+    result = tailor_application.handle(_settings(tmp_path, profile_path=str(profile_path)), JOB)
+    cv_call, letter_call, val_call = fake_converse
+    assert val_call["system"] not in (cv_call["system"], letter_call["system"])
+    assert val_call["settings"].bedrock_model_id == "model-x"
+    prompt = val_call["messages"][0]["content"][0]["text"]
+    assert "<tailored_cv>\n# Jane Doe\nTailored\n" in prompt
+    assert "<cover_letter>\nDear Acme Corp,\nLetter\n" in prompt
+    assert "<original_cv>\n" + Path(EXAMPLE_CV).read_text(encoding="utf-8") in prompt
+    start, end = prompt.index("<job_posting>"), prompt.index("</job_posting>")
+    assert start < prompt.index("We need Kubernetes") < end
+    assert "<profile>\n" + PROFILE.strip() + "\n</profile>" in prompt
+    assert result["validation"] == VALIDATION
+    assert result["rounds"] == [{"round": 1, "verdict": "FAIL", "issue_count": 1, "fit_score": 7}]
+    assert result["passed"] is False
+    saved = json.loads((Path(result["version_dir"]) / "validation_round_1.json").read_text(encoding="utf-8"))
+    assert saved == VALIDATION
+
+
+def test_parse_validation_accepts_schema_and_drops_extra_keys():
+    data = dict(VALIDATION, extra="x")
+    data["issues"] = [dict(VALIDATION["issues"][0], severity="high")]
+    parsed = parse_validation("Here you go:\n" + json.dumps(data))
+    assert parsed == VALIDATION
+
+
+@pytest.mark.parametrize("reply", [
+    "not json",
+    "{broken",
+    json.dumps(dict(VALIDATION, verdict="MAYBE")),
+    json.dumps(dict(VALIDATION, fit_score=11)),
+    json.dumps(dict(VALIDATION, fit_score="7")),
+    json.dumps(dict(VALIDATION, issues=[{"doc": "email", "type": "tone", "detail": "d", "fix": "f"}])),
+    json.dumps(dict(VALIDATION, issues=[{"doc": "cv", "type": "spelling", "detail": "d", "fix": "f"}])),
+    json.dumps(dict(VALIDATION, gaps="Go")),
+    json.dumps({k: v for k, v in VALIDATION.items() if k != "fit_summary"}),
+])
+def test_parse_validation_rejects_off_schema(reply):
+    with pytest.raises(ValidatorParseError):
+        parse_validation(reply)
 
 
 def test_letter_feedback_and_fixes_are_in_prompt(tmp_path, fake_converse):
