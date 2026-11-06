@@ -1,6 +1,7 @@
 """Chat agent: Bedrock Converse tool-use loop over the model-facing tools (AGENT_SPEC.md → Tools)."""
 
 import json
+import time
 from types import ModuleType
 from typing import Callable
 
@@ -17,11 +18,16 @@ MAX_TOOL_TURNS = 8
 
 class ChatAgent:
     def __init__(self, settings: Settings, tools: list[ModuleType],
-                 converse: Callable = client.converse):
+                 converse: Callable = client.converse,
+                 on_tool_result: Callable[[str, dict, float], None] | None = None):
         self.settings = settings
         self.tools = {t.TOOL_SPEC["name"]: t for t in tools}
         self.converse = converse
+        # Called after each successful tool run with (tool name, result, seconds since the user message),
+        # so code (not the model) can print results.
+        self.on_tool_result = on_tool_result
         self.messages: list[dict] = []
+        self._started = time.monotonic()
 
     def tool_config(self) -> dict | None:
         if not self.tools:
@@ -31,6 +37,7 @@ class ChatAgent:
     def send(self, user_text: str) -> str:
         # Missing CV is fatal: raise before any model or tool call (MissingCVError stops the chat).
         require_original_cv(self.settings)
+        self._started = time.monotonic()
         self.messages.append({"role": "user", "content": [{"text": user_text}]})
         for _ in range(MAX_TOOL_TURNS):
             response = self.converse(self.settings, self.messages, system=CHAT_SYSTEM,
@@ -54,6 +61,8 @@ class ChatAgent:
             raise
         except Exception as exc:  # report tool failures to the model instead of crashing the chat
             result, status = {"ok": False, "message": str(exc)}, "error"
+        if status == "success" and self.on_tool_result:
+            self.on_tool_result(tool_use["name"], result, time.monotonic() - self._started)
         return {"toolResult": {"toolUseId": tool_use["toolUseId"],
                                "content": [{"json": json.loads(json.dumps(result, default=str))}],
                                "status": status}}

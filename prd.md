@@ -58,7 +58,8 @@ Tool behavior, the validator schema and the output layout are defined in `AGENT_
 
 ## 6. Chrome DevTools MCP integration
 - The Python agent is an **MCP client** of `npx chrome-devtools-mcp@latest`, connected over stdio with the `mcp` Python SDK. The agent starts the server itself.
-- **Server flags:** `--isolated` (a fresh temporary profile), `--no-usage-statistics`, `--no-category-network`, `--no-category-performance`, `--no-category-emulation`, `--no-category-debugging` and `--no-javascript-evaluation`.
+- **Server flags:** `--isolated` (a fresh temporary profile), `--no-usage-statistics`, `--no-category-network`, `--no-category-performance`, `--no-category-emulation` and `--no-javascript-evaluation`.
+  - Not `--no-category-debugging`: in chrome-devtools-mcp 1.12.0 that group contains `take_snapshot`, which `fetch_job` needs. The other debugging tools (console messages, CSS styles, screenshots, Lighthouse, screencast) stay on the server, but the Python allowlist rejects them.
 - **Window:** visible by default. `--headless` is added only when `CHROME_HEADLESS=true`.
 - **Two layers of browser safety:**
   1. Risky tool groups are switched off when the server starts.

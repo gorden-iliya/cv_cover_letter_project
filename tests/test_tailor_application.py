@@ -24,8 +24,9 @@ VALIDATION = {"verdict": "FAIL", "fit_score": 7,
 VALIDATION_REPLY = "```json\n" + json.dumps(VALIDATION) + "\n```"
 
 
-def _settings(tmp_path, cv_path=EXAMPLE_CV, profile_path=None):
-    return Settings("model-x", "eu-west-1", ("jobs.lever.co",), 500, 2, False,
+def _settings(tmp_path, cv_path=EXAMPLE_CV, profile_path=None, rounds=1):
+    # rounds=1 keeps single-round tests simple; critic-loop tests pass rounds explicitly.
+    return Settings("model-x", "eu-west-1", ("jobs.lever.co",), 500, rounds, False,
                     cv_path, profile_path or str(tmp_path / "no_profile.md"), str(tmp_path / "out"))
 
 
@@ -221,7 +222,183 @@ def test_overridden_verdict_reaches_result_and_saved_file(tmp_path, monkeypatch)
     assert saved["verdict"] == "FAIL"
 
 
+def _validator_replies(monkeypatch, replies):
+    """Fake converse: generators return text; validator calls return `replies` in order."""
+    validator_calls = []
+
+    def fake(settings, messages, system=None, tool_config=None):
+        if "strict reviewer" in system:
+            validator_calls.append(messages)
+            text = replies[len(validator_calls) - 1]
+        else:
+            text = "text"
+        return {"output": {"message": {"role": "assistant", "content": [{"text": text}]}}}
+
+    monkeypatch.setattr(client, "converse", fake)
+    return validator_calls
+
+
+def test_invalid_validator_json_is_retried_once(tmp_path, monkeypatch):
+    calls = _validator_replies(monkeypatch, ["not json at all", VALIDATION_REPLY])
+    result = tailor_application.handle(_settings(tmp_path), JOB)
+    assert len(calls) == 2
+    assert calls[0] == calls[1]  # same prompt re-sent
+    assert result["validation"] == VALIDATION
+
+
+def test_two_invalid_validator_replies_make_fail_round(tmp_path, monkeypatch):
+    calls = _validator_replies(monkeypatch, ["not json", "{broken}"])
+    result = tailor_application.handle(_settings(tmp_path), JOB)
+    assert len(calls) == 2
+    v = result["validation"]
+    assert v["verdict"] == "FAIL" and v["fit_score"] == 1
+    assert v["fit_summary"] == "" and v["gaps"] == []
+    assert len(v["issues"]) == 1
+    issue = v["issues"][0]
+    assert issue["doc"] is None and issue["type"] == "validator_error"
+    assert "invalid JSON" in issue["detail"] and issue["fix"] == "re-run the validator"
+    assert result["rounds"] == [{"round": 1, "verdict": "FAIL", "issue_count": 1, "fit_score": 1}]
+    assert result["passed"] is False
+    saved = json.loads((Path(result["version_dir"]) / "validation_round_1.json").read_text(encoding="utf-8"))
+    assert saved == v
+
+
+def test_model_cannot_return_validator_error():
+    issue = {"doc": None, "type": "validator_error", "detail": "d", "fix": "f"}
+    with pytest.raises(ValidatorParseError):
+        parse_validation(json.dumps(dict(VALIDATION, issues=[issue])))
+
+
 def test_letter_feedback_and_fixes_are_in_prompt(tmp_path, fake_converse):
     tailor_application.generate_letter(_settings(tmp_path), "CV", JOB, "", feedback="shorter", fixes=["name company"])
     prompt = fake_converse[0]["messages"][0]["content"][0]["text"]
     assert "<user_feedback>\nshorter" in prompt and "- name company" in prompt
+
+
+# --- critic loop (F18) ---
+
+def _issue(doc, n=1):
+    return [{"doc": doc, "type": "missing_keyword", "detail": f"d{i}", "fix": f"fix {doc} {i}"} for i in range(n)]
+
+
+def _loop_fake(monkeypatch, validations):
+    """Generators return numbered text (cv-1, letter-1, ...); validator returns `validations` in order,
+    repeating the last one if the loop asks for more."""
+    log = []
+
+    def fake(settings, messages, system=None, tool_config=None):
+        kind = "validator" if "strict reviewer" in system else "letter" if "cover letter" in system else "cv"
+        log.append(kind)
+        n = log.count(kind)
+        if kind == "validator":
+            text = json.dumps(validations[min(n, len(validations)) - 1])
+        else:
+            text = f"{kind}-{n}"
+        return {"output": {"message": {"role": "assistant", "content": [{"text": text}]}}}
+
+    monkeypatch.setattr(client, "converse", fake)
+    return log
+
+
+@pytest.mark.parametrize("cap", [1, 2, 3])
+def test_loop_runs_exactly_cap_rounds_when_validator_always_fails(tmp_path, monkeypatch, cap):
+    log = _loop_fake(monkeypatch, [dict(VALIDATION, issues=_issue("cv"))])
+    result = tailor_application.handle(_settings(tmp_path, rounds=cap), JOB)
+    assert log.count("validator") == cap
+    assert len(result["rounds"]) == cap and result["passed"] is False
+    files = sorted(p.name for p in Path(result["version_dir"]).glob("validation_round_*.json"))
+    assert files == [f"validation_round_{i}.json" for i in range(1, cap + 1)]
+
+
+def test_cap_returns_best_attempt_fewest_issues(tmp_path, monkeypatch):
+    _loop_fake(monkeypatch, [dict(VALIDATION, fit_score=9, issues=_issue("cv", 1)),
+                             dict(VALIDATION, fit_score=9, issues=_issue("cv", 3))])
+    result = tailor_application.handle(_settings(tmp_path, rounds=2), JOB)
+    assert result["passed"] is False
+    assert result["cv"] == "cv-1\n" and result["cover_letter"] == "letter-1\n"
+    assert len(result["validation"]["issues"]) == 1
+    assert [r["issue_count"] for r in result["rounds"]] == [1, 3]
+    saved = Path(result["version_dir"])
+    assert (saved / "cv.md").read_text(encoding="utf-8") == "cv-1\n"
+
+
+def test_cap_tie_on_issues_picks_highest_fit_score(tmp_path, monkeypatch):
+    _loop_fake(monkeypatch, [dict(VALIDATION, fit_score=5, issues=_issue("cv", 2)),
+                             dict(VALIDATION, fit_score=8, issues=_issue("cv", 2))])
+    result = tailor_application.handle(_settings(tmp_path, rounds=2), JOB)
+    assert result["cv"] == "cv-2\n" and result["validation"]["fit_score"] == 8
+    assert result["rounds"] == [{"round": 1, "verdict": "FAIL", "issue_count": 2, "fit_score": 5},
+                                {"round": 2, "verdict": "FAIL", "issue_count": 2, "fit_score": 8}]
+
+
+def test_loop_stops_at_first_pass(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [dict(VALIDATION, issues=_issue("letter")),
+                                   dict(VALIDATION, verdict="PASS", fit_score=8, issues=[])])
+    result = tailor_application.handle(_settings(tmp_path, rounds=3), JOB)
+    assert log.count("validator") == 2 and result["passed"] is True
+    assert [r["verdict"] for r in result["rounds"]] == ["FAIL", "PASS"]
+    assert result["cover_letter"] == "letter-2\n"
+
+
+def test_fixes_from_failed_round_reach_next_generator(tmp_path, monkeypatch):
+    prompts = []
+    log = _loop_fake(monkeypatch, [dict(VALIDATION, issues=_issue("cv"))])
+    original = client.converse
+
+    def spy(settings, messages, system=None, tool_config=None):
+        prompts.append(messages[0]["content"][0]["text"])
+        return original(settings, messages, system, tool_config)
+
+    monkeypatch.setattr(client, "converse", spy)
+    tailor_application.handle(_settings(tmp_path, rounds=2), JOB)
+    assert log == ["cv", "letter", "validator", "cv", "letter", "validator"]
+    assert "fix cv 0" not in prompts[0] and "fix cv 0" in prompts[3]
+
+
+def _spy_prompts(monkeypatch):
+    prompts = []
+    original = client.converse
+
+    def spy(settings, messages, system=None, tool_config=None):
+        prompts.append(messages[0]["content"][0]["text"])
+        return original(settings, messages, system, tool_config)
+
+    monkeypatch.setattr(client, "converse", spy)
+    return prompts
+
+
+def test_letter_only_issues_regenerate_letter_not_cv(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [dict(VALIDATION, issues=_issue("letter"))])
+    prompts = _spy_prompts(monkeypatch)
+    result = tailor_application.handle(_settings(tmp_path, rounds=2), JOB)
+    assert log == ["cv", "letter", "validator", "letter", "validator"]
+    assert "fix letter 0" in prompts[3] and "<tailored_cv>\ncv-1" in prompts[3]  # letter 2 built on the kept CV
+    assert "cv-1\n" in prompts[4] and "letter-2\n" in prompts[4]  # round 2 validates kept CV + new letter
+    assert len(result["rounds"]) == 2
+
+
+def test_cv_only_issues_regenerate_cv_and_letter(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [dict(VALIDATION, issues=_issue("cv"))])
+    prompts = _spy_prompts(monkeypatch)
+    tailor_application.handle(_settings(tmp_path, rounds=2), JOB)
+    assert log == ["cv", "letter", "validator", "cv", "letter", "validator"]
+    assert "fix cv 0" in prompts[3]
+    assert "cv-2" in prompts[4] and "fix cv 0" not in prompts[4]  # new letter from new CV; CV fixes stay with the CV
+    assert "cv-2\n" in prompts[5] and "letter-2\n" in prompts[5]
+
+
+def test_mixed_issues_send_each_fix_to_its_own_generator(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [dict(VALIDATION, issues=_issue("cv") + _issue("letter"))])
+    prompts = _spy_prompts(monkeypatch)
+    tailor_application.handle(_settings(tmp_path, rounds=2), JOB)
+    assert log == ["cv", "letter", "validator", "cv", "letter", "validator"]
+    assert "fix cv 0" in prompts[3] and "fix letter 0" not in prompts[3]
+    assert "fix letter 0" in prompts[4] and "fix cv 0" not in prompts[4]
+
+
+def test_validator_error_round_regenerates_nothing(tmp_path, monkeypatch):
+    calls = _validator_replies(monkeypatch, ["bad", "bad", VALIDATION_REPLY])
+    result = tailor_application.handle(_settings(tmp_path, rounds=2), JOB)
+    assert len(calls) == 3  # 2 attempts in round 1, 1 in round 2, same prompt (no regeneration)
+    assert calls[0] == calls[2]
+    assert [r["issue_count"] for r in result["rounds"]] == [1, 1]

@@ -1,0 +1,57 @@
+"""Terminal presentation of a tailor_application result (AGENT_SPEC.md → Behavior → output).
+
+Printed by code, not by the chat model, so the shown documents are exactly what was saved.
+"""
+
+
+def round_line(rounds: list[dict]) -> str:
+    parts = []
+    for r in rounds:
+        if r["verdict"] == "PASS":
+            parts.append(f"Round {r['round']}: PASS, fit {r['fit_score']}/10")
+        else:
+            n = r["issue_count"]
+            parts.append(f"Round {r['round']}: FAIL ({n} issue{'s' if n != 1 else ''})")
+    return " → ".join(parts)
+
+
+def unresolved_block(result: dict) -> list[str]:
+    if result.get("passed"):
+        return []
+    issues = result["validation"].get("issues") or []
+    lines = ["", f"!! NOT PASSED: validation did not pass after {len(result['rounds'])} round(s). "
+                 "Remaining issues:"]
+    for i in issues:
+        lines.append(f"- [{i.get('doc') or 'general'}] {i['type']}: {i['detail']} (fix: {i['fix']})")
+    if not issues:
+        lines.append("- (no issue details)")
+    return lines
+
+
+def format_result(result: dict, elapsed_seconds: float) -> str:
+    validation = result["validation"]
+    gaps = validation.get("gaps") or []
+    lines = [
+        round_line(result["rounds"]),
+        *unresolved_block(result),
+        "",
+        "# Tailored CV",
+        "",
+        result["cv"].rstrip(),
+        "",
+        "# Cover letter",
+        "",
+        result["cover_letter"].rstrip(),
+        "",
+        f"# Fit summary ({validation['fit_score']}/10)",
+        "",
+        validation.get("fit_summary") or "(none)",
+        "",
+        "# Gaps",
+        "",
+        *([f"- {g}" for g in gaps] or ["(none)"]),
+        "",
+        f"Saved to: {result['version_dir']}",
+        f"Total run time: {elapsed_seconds:.1f}s",
+    ]
+    return "\n".join(lines)
