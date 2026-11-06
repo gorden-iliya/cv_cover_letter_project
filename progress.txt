@@ -173,3 +173,14 @@ Files: prompts/letter_generator.py, agent/profile.py, tools/tailor_application.p
 Notes for next:
 - Bash heredoc mangles "\\n" in python source -> use Edit for test files with escapes
 - next: F14 (profile sections applied; remove Length limits -> still works). Can reuse verify_f13.py w/ profile variants
+
+## 2026-11-06 — F14
+Task: F14 "profile.md sections are applied and missing sections mean no constraint" -> passes=true. Slice 2 done.
+Decisions:
+- letter system prompt: facts may come from <tailored_cv> or <profile>; Must mention items are user-given facts -> always include (old wording "that the CV supports" risked dropping e.g. "available in January"); Never mention = not even to deny it
+- profile still passed raw (no heading parsing in code); CV generator gets no profile (spec: CV gen = original CV + job)
+- Target roles / Companies to avoid: no generator behavior; left for validator (profile_rule) in slice 3
+- verified: pytest 41 pass + %TEMP%/verify_f14.py (real Bedrock, 7-heading profile, job asking for salary + visa) -> full: 97 words, January yes, salary/visa no, Globex named; Length limits removed: 147 words, same checks pass, files saved
+Files: prompts/letter_generator.py, tests/test_tailor_application.py, prd.json, progress.txt
+Notes for next:
+- slice 3: F15 (validator separate Bedrock call, JSON), F16 (code overrides PASS w/ serious issues), F17 (invalid JSON retry once)
