@@ -184,3 +184,15 @@ Decisions:
 Files: prompts/letter_generator.py, tests/test_tailor_application.py, prd.json, progress.txt
 Notes for next:
 - slice 3: F15 (validator separate Bedrock call, JSON), F16 (code overrides PASS w/ serious issues), F17 (invalid JSON retry once)
+
+## 2026-11-06 — F15
+Task: F15 "Validator is a separate Bedrock call that returns structured JSON" -> passes=true.
+Decisions:
+- agent/validator.py: validate() = own converse call w/ VALIDATOR_SYSTEM; parse_validation() takes outermost {...} (tolerates fences/prose), strict schema check (verdict PASS|FAIL, fit_score int 1-10 not bool/str, issues doc cv|letter + type enum + detail/fix str, fit_summary str, gaps list[str]); extra keys dropped; off-schema -> ValidatorParseError (raised for now; F17 adds retry-once then FAIL round)
+- prompts/validator.py: prompt = <tailored_cv> + <cover_letter> + job_block + <original_cv> + <profile>; unmet requirements -> gaps only (not missing_keyword); invented_fact must quote text from CV/letter
+- tailor_application.handle: 1 validator round after letter; writes validation_round_1.json; returns validation, rounds [{round, verdict, issue_count, fit_score}], passed. No PASS override yet (F16), no loop yet (slice 4)
+- verified: pytest 52 pass + %TEMP%/verify_f15.py (real Bedrock, spy on client.converse) -> 3 calls, validator system differs, its prompt has all 5 tags, output parsed, file saved
+Files: agent/validator.py, prompts/validator.py, tools/tailor_application.py, tests/test_tailor_application.py, prd.json, progress.txt
+Notes for next:
+- QUALITY RISK: with BEDROCK_MODEL_ID=us.amazon.nova-2-lite-v1:0 the validator reports false invented_fact issues (said CV lists "Go"; cv.md has no Go, 3 runs). Prompt tweaks didn't fix it. Can make the critic loop always FAIL -> success metric (80% pass in 2 rounds) at risk. Human: consider a stronger model in .env. Not blocking unit-tested slices.
+- next: F16 (code overrides PASS if invented_fact/profile_rule/prompt_injection issues), then F17

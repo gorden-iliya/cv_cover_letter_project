@@ -1,9 +1,10 @@
 """tailor_application tool (AGENT_SPEC.md → Tools → 2).
 
-Fixed pipeline in code. Built so far: CV generator, letter generator, version folder (slices 1-2).
-Validator/critic loop (slices 3-4) and re-prompt targets (slice 8) come next.
+Fixed pipeline in code. Built so far: CV generator, letter generator, one validator round,
+version folder. Critic loop (slice 4) and re-prompt targets (slice 8) come next.
 """
 
+import json
 import re
 
 from agent import client
@@ -11,6 +12,7 @@ from agent.config import Settings
 from agent.cv import read_original_cv
 from agent.output import job_markdown, new_version_dir, write_text
 from agent.profile import read_profile
+from agent.validator import validate
 from prompts.cv_generator import CV_GENERATOR_SYSTEM, build_cv_prompt
 from prompts.letter_generator import LETTER_GENERATOR_SYSTEM, build_letter_prompt
 
@@ -76,9 +78,14 @@ def handle(settings: Settings, job: dict, feedback: str | None = None, target: s
     profile = read_profile(settings)
     cv = generate_cv(settings, original_cv, job, feedback)
     letter = generate_letter(settings, cv, job, profile, feedback)
+    validation = validate(settings, cv, letter, job, original_cv, profile)
+    rounds = [{"round": 1, "verdict": validation["verdict"], "issue_count": len(validation["issues"]),
+               "fit_score": validation["fit_score"]}]
 
     version_dir = new_version_dir(settings.output_dir, job)
     write_text(version_dir, "job.md", job_markdown(job))
     write_text(version_dir, "cv.md", cv)
     write_text(version_dir, "cover_letter.md", letter)
-    return {"version_dir": str(version_dir), "cv": cv, "cover_letter": letter}
+    write_text(version_dir, "validation_round_1.json", json.dumps(validation, indent=2, ensure_ascii=False))
+    return {"version_dir": str(version_dir), "cv": cv, "cover_letter": letter, "validation": validation,
+            "rounds": rounds, "passed": validation["verdict"] == "PASS"}
