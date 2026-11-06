@@ -120,3 +120,17 @@ Notes for next:
 - HUMAN still: add ALLOWED_JOB_SITES + MAX_TOKENS_PER_CALL to real .env (verification works around it via subprocess env)
 - Bash tool: no `VAR=x cmd`, no $TEMP/$(...) vars -> write helper to C:/Users/iliya/AppData/Local/Temp and call with literal path
 - next: F5 (missing CV) needs tailor_application (or CV check) -> build tools/tailor_application.py (CV generator only in slice 1) + register in TOOLS; then F6, F11, F12
+
+## 2026-11-06 — F5
+Task: F5 "Missing original CV stops the run with a clear message" -> passes=true.
+Decisions:
+- agent/cv.py: MissingCVError(path), require_original_cv, read_original_cv (read-only; tailor_application should use read_original_cv)
+- check runs in ChatAgent.send before any model/tool call -> deterministic, no Bedrock/Chrome spent; app starts normally so step "start app + give URL" works literally (no startup check)
+- MissingCVError fatal: _run_tool re-raises it (not a toolResult error); main prints "Stopped: Original CV not found at '<path>'..." to stderr, exit 1
+- test_chat settings now use cv/original_cv.example.md (real CV git-ignored, may be absent)
+- verified: pytest 23 pass + %TEMP%/verify_f5.py (CV_PATH=cv/does_not_exist.md, URL on stdin) -> exit 1, message names path
+Files: agent/cv.py, agent/chat.py, main.py, tests/test_chat.py, prd.json, progress.txt
+Notes for next:
+- F6: build tools/tailor_application.py (CV generator only in slice 1, use read_original_cv), register in TOOLS; then F11, F12
+- Bash tool: heredoc appends (cat >> <<EOF) blocked -> use Edit
+- tests: main.chat_loop default read=input bound at def time -> wrap chat_loop to inject read

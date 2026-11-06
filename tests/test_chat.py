@@ -1,13 +1,16 @@
 from types import SimpleNamespace
 
+import pytest
+
 import main
 from agent.chat import GREETING, MAX_TOOL_TURNS, ChatAgent
 from agent.config import Settings
+from agent.cv import MissingCVError
 
 
-def _settings():
+def _settings(cv_path="cv/original_cv.example.md"):
     return Settings("model-x", "eu-west-1", ("jobs.lever.co",), 500, 2, False,
-                    "cv/original_cv.md", "cv/profile.md", "output")
+                    cv_path, "cv/profile.md", "output")
 
 
 def _text_reply(text):
@@ -96,3 +99,34 @@ def test_chat_loop_handles_eof():
     out = []
     main.chat_loop(SimpleNamespace(send=None), read=read, write=out.append)
     assert out == [GREETING, ""]
+
+
+def test_missing_cv_stops_before_any_model_call(tmp_path):
+    missing = str(tmp_path / "nope.md")
+    fake = FakeConverse([])
+    agent = ChatAgent(_settings(missing), [], converse=fake)
+    with pytest.raises(MissingCVError) as err:
+        agent.send("https://jobs.lever.co/acme/123")
+    assert missing in str(err.value)
+    assert fake.calls == []
+
+
+def test_missing_cv_inside_tool_is_not_swallowed():
+    def handle(settings, **kw):
+        raise MissingCVError("gone.md")
+
+    fake = FakeConverse([_tool_reply("t", {})])
+    agent = ChatAgent(_settings(), [_fake_tool("t", handle)], converse=fake)
+    with pytest.raises(MissingCVError):
+        agent.send("go")
+
+
+def test_main_exits_with_message_naming_missing_cv(tmp_path, monkeypatch, capsys):
+    missing = str(tmp_path / "missing_cv.md")
+    monkeypatch.setattr(main, "load_settings", lambda: _settings(missing))
+    loop = main.chat_loop
+    monkeypatch.setattr(main, "chat_loop", lambda agent: loop(
+        agent, read=lambda prompt: "https://jobs.lever.co/acme/123", write=lambda s: None))
+    assert main.main() == 1
+    err = capsys.readouterr().err
+    assert "Original CV not found" in err and missing in err

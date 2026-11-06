@@ -6,6 +6,7 @@ from typing import Callable
 
 from agent import client
 from agent.config import Settings
+from agent.cv import MissingCVError, require_original_cv
 from prompts.chat_system import CHAT_SYSTEM
 
 GREETING = "Paste a job URL or the job posting text to start (type 'exit' to quit)."
@@ -28,6 +29,8 @@ class ChatAgent:
         return {"tools": [{"toolSpec": t.TOOL_SPEC} for t in self.tools.values()]}
 
     def send(self, user_text: str) -> str:
+        # Missing CV is fatal: raise before any model or tool call (MissingCVError stops the chat).
+        require_original_cv(self.settings)
         self.messages.append({"role": "user", "content": [{"text": user_text}]})
         for _ in range(MAX_TOOL_TURNS):
             response = self.converse(self.settings, self.messages, system=CHAT_SYSTEM,
@@ -47,6 +50,8 @@ class ChatAgent:
             if tool is None:
                 raise ValueError(f"Unknown tool: {tool_use['name']}")
             result, status = tool.handle(self.settings, **tool_use.get("input", {})), "success"
+        except MissingCVError:
+            raise
         except Exception as exc:  # report tool failures to the model instead of crashing the chat
             result, status = {"ok": False, "message": str(exc)}, "error"
         return {"toolResult": {"toolUseId": tool_use["toolUseId"],

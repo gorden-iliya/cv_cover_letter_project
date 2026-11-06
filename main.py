@@ -4,6 +4,7 @@ import sys
 
 from agent.chat import GREETING, ChatAgent
 from agent.config import ConfigError, load_settings
+from agent.cv import MissingCVError
 from tools import TOOLS
 
 
@@ -28,7 +29,11 @@ def main() -> int:
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
         return 1
-    chat_loop(ChatAgent(settings, TOOLS))
+    try:
+        chat_loop(ChatAgent(settings, TOOLS))
+    except MissingCVError as exc:
+        print(f"\nStopped: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
