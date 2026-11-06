@@ -345,7 +345,7 @@
       "Verify cv/, output/ and .env are ignored",
       "Verify cv/original_cv.example.md and .env.example are committed instead"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "non-functional",
