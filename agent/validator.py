@@ -11,6 +11,7 @@ VERDICTS = ("PASS", "FAIL")
 DOCS = ("cv", "letter")
 ISSUE_TYPES = ("invented_fact", "missing_keyword", "tone", "length", "profile_rule", "prompt_injection")
 BLOCKING_TYPES = ("invented_fact", "profile_rule", "prompt_injection")  # PASS not allowed with these
+VALIDATOR_ERROR = "validator_error"  # code-only issue type, doc is None
 
 
 class ValidatorParseError(ValueError):
@@ -61,10 +62,25 @@ def parse_validation(text: str) -> dict:
             "fit_summary": summary, "gaps": gaps}
 
 
+def validator_error_round(detail: str) -> dict:
+    """FAIL round built by code when the validator reply is invalid twice. The model never
+    returns validator_error (it is not in ISSUE_TYPES, so parse_validation rejects it)."""
+    return {"verdict": "FAIL", "fit_score": 1,
+            "issues": [{"doc": None, "type": VALIDATOR_ERROR, "detail": detail, "fix": "re-run the validator"}],
+            "fit_summary": "", "gaps": []}
+
+
 def validate(settings: Settings, tailored_cv: str, cover_letter: str, job: dict, original_cv: str,
              profile: str) -> dict:
-    """One validator call (separate from the generators). Returns parsed validator JSON."""
+    """Validator call (separate from the generators). An invalid reply is retried once; a second
+    invalid reply becomes a code-built FAIL round. Always returns validator JSON."""
     prompt = build_validator_prompt(tailored_cv, cover_letter, job, original_cv, profile)
-    response = client.converse(settings, [{"role": "user", "content": [{"text": prompt}]}],
-                               system=VALIDATOR_SYSTEM)
-    return parse_validation(client.response_text(response))
+    error = None
+    for _attempt in range(2):
+        response = client.converse(settings, [{"role": "user", "content": [{"text": prompt}]}],
+                                   system=VALIDATOR_SYSTEM)
+        try:
+            return parse_validation(client.response_text(response))
+        except ValidatorParseError as exc:
+            error = exc
+    return validator_error_round(str(error))

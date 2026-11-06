@@ -5,6 +5,7 @@ import sys
 from agent.chat import GREETING, ChatAgent
 from agent.config import ConfigError, load_settings
 from agent.cv import MissingCVError
+from agent.present import format_result
 from tools import TOOLS
 
 
@@ -23,14 +24,24 @@ def chat_loop(agent: ChatAgent, read=input, write=print) -> None:
         write("\nagent> " + agent.send(text))
 
 
+def result_printer(write=print):
+    def on_tool_result(name: str, result: dict, elapsed: float) -> None:
+        if name == "tailor_application":
+            write("\n" + format_result(result, elapsed))
+    return on_tool_result
+
+
 def main() -> int:
+    # Windows pipes default to cp1252, which cannot print "→" or many CV characters.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     try:
         settings = load_settings()
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
         return 1
     try:
-        chat_loop(ChatAgent(settings, TOOLS))
+        chat_loop(ChatAgent(settings, TOOLS, on_tool_result=result_printer()))
     except MissingCVError as exc:
         print(f"\nStopped: {exc}", file=sys.stderr)
         return 1

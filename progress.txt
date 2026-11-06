@@ -205,3 +205,120 @@ Decisions:
 Files: agent/validator.py, tests/test_tailor_application.py, prd.json, progress.txt
 Notes for next:
 - next: F17 (invalid validator JSON -> retry once, then FAIL round w/ one parse-error issue). Spec issue needs doc (cv|letter) + type enum for the parse-error issue -> spec silent on which; pick or ask
+
+## 2026-11-06 — F17 blocked (question for human)
+Task: F17 "Invalid validator JSON is retried once, then counted as FAIL" -> NOT started, passes stays false.
+Why blocked: AGENT_SPEC.md Data says the failed round gets "one issue describing the parse error", but the issue schema only allows
+doc = cv|letter and type = invented_fact|missing_keyword|tone|length|profile_rule|prompt_injection. None fits a parse error, and the
+choice changes slice 4 (F19 "regenerate only the document(s) named in the issues"; F18 best attempt = fewest issues).
+QUESTION for human (answer by editing AGENT_SPEC.md Data > validator JSON, where this fact lives):
+ Which doc + type should the synthetic parse-error issue have, and what should the next round regenerate?
+ Options:
+  A) (recommended) add type "validator_error" with doc omitted/null; not blocking-PASS-relevant (round is FAIL anyway); next round
+     regenerates nothing, just re-runs the validator on the same CV + letter.
+  B) doc "cv", type "missing_keyword" (reuse enum) -> next round regenerates CV + letter (wastes calls, may change good docs).
+  C) doc "letter", type "tone" -> next round regenerates letter only.
+Unambiguous part (ready to build once answered): retry the validator call once on ValidatorParseError (agent/validator.py validate()),
+then build FAIL round {verdict FAIL, fit_score ?, issues [parse issue], fit_summary "", gaps []}. Also needs: fit_score for that
+round (schema says int 1-10) -> suggest 1 (lowest, so it never wins best-attempt) — confirm.
+Files: progress.txt
+Notes for next: if human prefers, skip F17 and start slice 5 (F7 fetch_job via MCP; blocked only by slice 1) — say so here.
+
+## 2026-11-06 — F17 question ANSWERED (human)
+Answer: option A. AGENT_SPEC.md Data > validator JSON updated:
+- new issue type validator_error, doc null (only for it); code-only, model never returns it
+- 2nd invalid reply -> code builds FAIL round: fit_score 1, one validator_error issue, fit_summary "", gaps []
+- next round regenerates nothing, re-runs validator on same CV + letter
+- round counts in best-attempt like any other (fewest issues, then highest fit_score) — human's choice, accepted knowingly
+Unblocked: F17 ready to build. Check F19 code (regen only docs named in issues) treats doc=null as "regen nothing".
+Files: AGENT_SPEC.md, progress.txt
+
+## 2026-11-06 — F17
+Task: F17 "Invalid validator JSON is retried once, then counted as FAIL" -> passes=true. Slice 3 done.
+Decisions:
+- retry lives in validate() (agent/validator.py): 2 attempts, same prompt; ValidatorParseError never escapes now -> validate() always returns validator JSON
+- validator_error_round(detail) builds {FAIL, fit_score 1, [{doc None, type validator_error, detail=<last parse error>, fix "re-run the validator"}], "", []}
+- VALIDATOR_ERROR kept out of ISSUE_TYPES -> model reply containing validator_error is rejected (spec: code-only)
+- verified: steps are mock-based -> tests test_invalid_validator_json_is_retried_once, test_two_invalid_validator_replies_make_fail_round (also saved file + rounds), test_model_cannot_return_validator_error; pytest 62 pass
+Files: agent/validator.py, tests/test_tailor_application.py, prd.json, progress.txt
+Notes for next:
+- slice 4: F18 (loop cap + best attempt), F19 (regen only failing docs; doc=None/validator_error -> regen nothing, revalidate same docs), F22, F23
+- F12 still needs re-prompts (slice 8); F3 needs all callers (after slice 5)
+
+## 2026-11-06 — F18
+Task: F18 "Critic loop is capped at MAX_VALIDATION_ROUNDS" -> passes=true.
+Decisions:
+- loop in tailor_application.handle: rounds 1..settings.max_validation_rounds, break on PASS
+- regen policy built too (same code, F19 not flipped yet): next round regens docs named in issues (fixes per doc -> generator fixes arg), letter regenerated whenever CV is; validator_error (doc None) -> regen nothing, re-validate same docs
+- feedback passed to generators every round
+- cap w/o PASS -> best attempt = min(issue_count, -fit_score), tie -> earliest round. Returned cv/cover_letter/validation AND saved cv.md/cover_letter.md = best attempt's. INTERPRETATION: spec output says "validation: <last validator JSON>"; I return the best attempt's validation so issues match the shown docs (needed for F23 "remaining issues above the documents"). Confirm w/ human; if "last" literally meant, change in handle (final["validation"] -> attempts[-1]["validation"])
+- every round's validation_round_N.json saved
+- tests: _settings(rounds=1) default keeps old single-round tests; new _loop_fake numbers generator outputs (cv-1, letter-2...) to check which attempt returned
+- verified: mock-based steps -> tests (cap 1/2/3 always FAIL, best by issues, tie by fit, stop at PASS, fixes reach next gen, validator_error regen nothing); pytest 70 pass
+Files: tools/tailor_application.py, tests/test_tailor_application.py, prd.json, progress.txt
+Notes for next:
+- F19: logic exists; add tests letter-only issues -> round 2 letter only; cv issues -> cv + letter. Then F22 (terminal print round line etc., code prints, not the chat model — see F11 note), F23
+
+## 2026-11-06 — F19
+Task: F19 "Only failing documents are regenerated, and the letter follows a CV change" -> passes=true.
+Decisions:
+- no code change; regen policy already in tailor_application.handle (F18 iteration)
+- tests added: letter-only issues -> round 2 = letter + validator only, new letter built on kept cv-1, validator sees cv-1 + letter-2; cv-only issues -> cv + letter regen, letter from cv-2, cv fixes not leaked to letter prompt; mixed -> each generator gets only its own fixes
+- _spy_prompts helper wraps _loop_fake to capture prompts in order
+- verified: steps are mock-based -> pytest 73 pass
+Files: tests/test_tailor_application.py, prd.json, progress.txt
+Notes for next:
+- slice 4 left: F22 (terminal output: round line, docs, fit summary, gaps, folder, run time — printed by code, not chat model; see F11 note), F23 (unresolved issues above docs + 'not passed'). F22 step "full tailoring" can run on pasted text w/ real Bedrock
+
+## 2026-11-06 — F22
+Task: F22 "Results are printed in the terminal" -> passes=true.
+Decisions:
+- agent/present.py: round_line (FAIL rounds "(n issues)", PASS rounds ", fit X/10", joined " → " = spec example on one line), format_result = round line, # Tailored CV, # Cover letter, # Fit summary (score/10), # Gaps ((none) if empty), Saved to, Total run time
+- printed by code: ChatAgent(on_tool_result=cb) called after each successful tool w/ (name, result, seconds since user msg started) -> run time covers fetch + tailoring of that message; main.result_printer prints only for tailor_application, before the chat model's reply
+- main(): stdout reconfigured to utf-8 (Windows pipes = cp1252, can't print "→")
+- tool result to model still includes cv/cover_letter (spec output). Model reply in real run stayed accurate this time; chat prompt already says don't summarize
+- verified: pytest 80 pass + %TEMP%/verify_f22.py (real Bedrock, main.py via stdin w/ pasted Globex job) -> "Round 1: FAIL (3 issues) → Round 2: PASS, fit 9/10", CV, letter, fit summary, gaps, folder path, run time 11.7s printed; v1 has job.md, cv.md, cover_letter.md, validation_round_1/2.json
+Files: agent/present.py, agent/chat.py, main.py, tests/test_present.py, prd.json, progress.txt
+Notes for next:
+- F23: add to format_result: if not result["passed"] -> "NOT PASSED" notice + remaining issues (doc/type/detail) above the documents. Prompt-injection warning = F32 (slice 7), also in present.py
+
+## 2026-11-06 — F23
+Task: F23 "Unresolved issues are shown clearly when the cap is reached" -> passes=true. Slice 4 done (F22 F23 F18 F19; F12 waits on slice 8).
+Decisions:
+- present.unresolved_block: when passed=false, between round line and "# Tailored CV": "!! NOT PASSED: validation did not pass after N round(s). Remaining issues:" + "- [doc] type: detail (fix: fix)"; doc None (validator_error) shown as [general]
+- issues come from result["validation"] = best attempt's validation (F18 decision) -> they match the shown docs
+- verified: pytest 83 pass (unit + e2e test: real handle loop w/ validator always FAIL, cap 2 -> result_printer output order) + %TEMP%/verify_f23.py (mocked converse, printed output checked by eye)
+Files: agent/present.py, tests/test_present.py, prd.json, progress.txt
+Notes for next:
+- next slice: 5 (fetch_job via Chrome DevTools MCP): F7 first; needs `pip install mcp` (check requirements installed) + npx chrome-devtools-mcp@latest; then F8, F9, F25, F30, F31, F6
+
+## 2026-11-06 — F7 blocked (spec conflict, question for human)
+Task: F7 "fetch_job reads a public job page through the Chrome DevTools MCP server" -> NOT built, passes stays false. No code changed.
+Done: `pip install mcp` (got mcp 2.3.0). Probed server w/ %TEMP%/cvp/list_tools.py (real npx chrome-devtools-mcp@latest = 1.12.0, headless).
+CONFLICT: with the prd.md §6 flags, `take_snapshot` is NOT exposed -> call fails "Tool take_snapshot disabled".
+ In 1.12.0 take_snapshot is in the *debugging* category, so `--no-category-debugging` removes it. Without that flag it works.
+ prd.md §6 + F30 step require --no-category-debugging; AGENT_SPEC fetch_job sequence requires take_snapshot (twice). Can't satisfy both.
+QUESTION for human (answer by editing prd.md §6, where the flag list lives; F30 step text is human-owned too):
+ A) (recommended) drop --no-category-debugging from §6 (and F30 step). Debugging tools (screenshot, console, lighthouse, css...) then exist
+    on the server but the Python allowlist (navigate_page/new_page/take_snapshot/click/wait_for/list_pages) still rejects them in code.
+ B) keep the flag and pin an older chrome-devtools-mcp version where take_snapshot is not in debugging (unverified which; spec says @latest).
+ C) other idea from you.
+Minor question (same answer pass, AGENT_SPEC fetch_job): `wait_for` requires a non-empty `text` list (resolves when any text appears).
+ Spec doesn't say which text. Proposal: generic words likely on any job page, e.g. ["Apply", "Job", "Description", "Responsibilities",
+ "Requirements"] w/ a short timeout; a timeout is not an error (go on to take_snapshot; empty_page check catches blank pages). OK?
+Facts learned (save next iteration time):
+- mcp 2.x API: Tool.input_schema (not inputSchema), CallToolResult.is_error, .content[i].text
+- server default --pageIdRouting=true: navigate_page/take_snapshot/click/wait_for REQUIRE pageId; new_page(url) + list_pages need none
+- new_page/list_pages return text "## Pages\n1: about:blank\n2: Title (https://final/url) [selected]" -> parse final URL from the [selected] line
+- take_snapshot text = a11y tree lines `uid=1_7 link "Learn more" url="..."` -> find Show more/Read more button uid by regex
+- disallowed tool via server -> is_error result (not exception); our Python allowlist must reject before calling anyway
+- invalid args -> is_error text "Input validation error: ..."
+Files: progress.txt
+Notes for next: if human prefers, slice 8 F20 (re-prompts target cv/letter/both) is unblocked (needs only slice 4) — can be done while waiting.
+
+## 2026-11-06 — F7 questions ANSWERED (human)
+Answers:
+- server flags: option A. --no-category-debugging dropped (removes take_snapshot in 1.12.0). Verified independently: that flag removes get_console_message, get_css_styles, lighthouse_audit, list_console_messages, screencast_start/stop, take_screenshot, take_snapshot. No memory flag added (human chose A, not A').
+- wait_for: option A. texts "Apply","Job","Description","Requirements","Responsibilities", ~10s timeout; timeout = continue, not failure.
+Edited by human decision (not agent): prd.md §6 flags, prd.json F30 step 2 (now says must NOT include --no-category-debugging), AGENT_SPEC.md fetch_job wait_for line.
+Unblocked: F7 ready to build.

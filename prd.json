@@ -178,7 +178,7 @@
       "Mock both attempts as invalid",
       "Verify the round is FAIL with one issue describing the parse error"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -189,7 +189,7 @@
       "Verify exactly 2 validation rounds run",
       "Verify the result has passed=false and returns the best attempt (fewest issues, then highest fit_score)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -200,7 +200,7 @@
       "Mock round 1 to return only CV issues",
       "Verify round 2 regenerates both the CV and the letter"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -232,7 +232,7 @@
       "Verify the final CV, cover letter, fit summary and gaps are printed",
       "Verify the saved folder path and the total run time are printed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "output",
@@ -242,7 +242,7 @@
       "Run tailoring",
       "Verify the remaining issues are listed above the documents with a 'not passed' notice"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "output",
@@ -310,7 +310,7 @@
     "description": "Chrome DevTools MCP server starts with risky tool groups switched off",
     "steps": [
       "Inspect the server start command in the code",
-      "Verify it includes --isolated, --no-usage-statistics, --no-category-network, --no-category-performance, --no-category-emulation, --no-category-debugging and --no-javascript-evaluation",
+      "Verify it includes --isolated, --no-usage-statistics, --no-category-network, --no-category-performance, --no-category-emulation and --no-javascript-evaluation, and does NOT include --no-category-debugging (it removes take_snapshot)",
       "Verify --headless is added only when CHROME_HEADLESS=true"
     ],
     "passes": false

@@ -47,6 +47,8 @@ or {"ok": false, "reason": "not_allowed | fetch_failed | captcha | login_require
   Message on rejection: "Site not allowed. Add it to ALLOWED_JOB_SITES or paste the job text."
 - Python runs a fixed MCP sequence on chrome-devtools-mcp: `new_page`/`navigate_page` → `wait_for` → `take_snapshot`
   → if a "Show more" / "Read more" button exists, `click` it → `take_snapshot`.
+- `wait_for` waits for any of these texts: "Apply", "Job", "Description", "Requirements", "Responsibilities",
+  with a timeout of about 10 seconds. A timeout is not a failure: continue to `take_snapshot`. The empty-page check catches blank pages.
 - After loading, read the final URL (`list_pages`) and re-check the allowlist (catches redirects).
 - Only these MCP tools may be called: navigate_page, new_page, take_snapshot, click, wait_for, list_pages.
   Any other tool name is rejected in code.
@@ -91,8 +93,8 @@ Generate (or regenerate) the tailored CV and cover letter for a job, validate th
   "verdict": "PASS | FAIL",
   "fit_score": 7,
   "issues": [
-    {"doc": "cv | letter",
-     "type": "invented_fact | missing_keyword | tone | length | profile_rule | prompt_injection",
+    {"doc": "cv | letter | null",
+     "type": "invented_fact | missing_keyword | tone | length | profile_rule | prompt_injection | validator_error",
      "detail": "what is wrong",
      "fix": "what to change"}
   ],
@@ -102,7 +104,13 @@ Generate (or regenerate) the tailored CV and cover letter for a job, validate th
 ```
 - fit_score: integer 1-10.
 - PASS is only allowed when there are no `invented_fact`, `profile_rule` or `prompt_injection` issues.
-- Invalid JSON: retry the validator once, then treat the round as FAIL with one issue describing the parse error.
+- `doc` is null only for `validator_error`; every other issue type names `cv` or `letter`.
+- Invalid JSON: retry the validator call once. If the retry is also invalid, code builds the round itself:
+  `{"verdict": "FAIL", "fit_score": 1, "issues": [{"doc": null, "type": "validator_error", "detail": "<parse error>",
+  "fix": "re-run the validator"}], "fit_summary": "", "gaps": []}`.
+  - `validator_error` is never returned by the model; only code creates it.
+  - The next round regenerates nothing: it re-runs the validator on the same CV and letter.
+  - The round takes part in the best-attempt choice like any other round (fewest issues, then highest fit_score).
 
 ***outputs***
 ```
