@@ -78,3 +78,20 @@ Task: readiness check before first loop run. PRD items: F33 partly (gitignore), 
 Decisions: .gitignore += cv/* (except cv/original_cv.example.md) + output/, verified with git check-ignore. .env already present + ignored (AWS creds, BEDROCK_MODEL_ID, AWS_REGION).
 Env OK: python 3.13, pytest 9.2, node 24, claude 2.1.319.
 Notes for next: .env lacks ALLOWED_JOB_SITES, MAX_TOKENS_PER_CALL etc. — add to .env.example; user adds real values to .env (do not overwrite user's .env). Real CV may be absent -> use cv/original_cv.example.md for checks.
+
+## 2026-11-06 — slice 1 scaffold + F1
+Task: F1 "All settings are loaded from .env and nothing is hard-coded" -> passes=true. Slice 1 scaffold started.
+Decisions:
+- required = BEDROCK_MODEL_ID, AWS_REGION, ALLOWED_JOB_SITES, MAX_TOKENS_PER_CALL (prd.md §7 "(required)"/"(set)"; F2 optional list excludes MAX_TOKENS) ; empty value = missing
+- optional defaults in agent/config.py DEFAULTS (only literal paths in code = documented defaults)
+- load_dotenv(find_dotenv()) inside load_settings(); real env vars win (override=False)
+- main.py: ConfigError -> stderr "Config error: Missing setting(s): X..." exit 1; chat not yet built (prints "Settings loaded")
+- agent/client.py = only boto3 importer; converse(settings, messages, system, tool_config) passes modelId + inferenceConfig.maxTokens (F3 groundwork, not flipped — no callers yet)
+- nested CLAUDE.md adapted from ../SDD (dropped customer-support/mock-receiver/create-agent-tool parts: tools here have real backends)
+- F1 verified: pytest + temp copy of agent/+main.py with .env from .env.example (full -> exit 0; BEDROCK_MODEL_ID removed -> exit 1 w/ clear msg); grep: no model/region/site hard-coded
+Files: agent/{__init__,config,client}.py, agent/CLAUDE.md, tools/{__init__.py,CLAUDE.md}, prompts/{__init__.py,CLAUDE.md}, main.py, .env.example, requirements.txt, pytest.ini, cv/original_cv.example.md, tests/test_config.py, tests/test_client.py, prd.json
+Notes for next:
+- HUMAN: real .env missing ALLOWED_JOB_SITES and MAX_TOKENS_PER_CALL -> `python main.py` exits w/ config error until added (see .env.example). Not blocking unit-tested features.
+- `mcp` python package not installed (pip install -r requirements.txt) — needed by slice 5
+- verify F1/F2-style steps via temp copy (find_dotenv walks up from agent/config.py, so tests patch config.load_dotenv)
+- next: F2 (optional defaults) — logic + tests already exist (test_optional_defaults), just run its steps

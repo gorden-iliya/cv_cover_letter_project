@@ -8,7 +8,7 @@
       "Search the code and verify no model ID, region, path or site list is hard-coded",
       "Remove BEDROCK_MODEL_ID and verify the app exits with a clear 'missing setting' message"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "configuration",
