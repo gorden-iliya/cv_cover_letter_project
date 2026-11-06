@@ -50,7 +50,7 @@
       "Start the app and give a job URL",
       "Verify the agent stops with a message naming the missing CV path"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
