@@ -2,7 +2,24 @@
 
 import sys
 
+from agent.chat import GREETING, ChatAgent
 from agent.config import ConfigError, load_settings
+from tools import TOOLS
+
+
+def chat_loop(agent: ChatAgent, read=input, write=print) -> None:
+    write(GREETING)
+    while True:
+        try:
+            text = read("\nyou> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            write("")
+            return
+        if not text:
+            continue
+        if text.lower() in ("exit", "quit"):
+            return
+        write("\nagent> " + agent.send(text))
 
 
 def main() -> int:
@@ -11,9 +28,7 @@ def main() -> int:
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
         return 1
-
-    # Terminal chat is implemented in a later slice (prd.json: "Terminal chat starts and asks for a job").
-    print(f"Settings loaded (model {settings.bedrock_model_id}, region {settings.aws_region}).")
+    chat_loop(ChatAgent(settings, TOOLS))
     return 0
 
 

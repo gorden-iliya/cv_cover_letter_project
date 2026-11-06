@@ -40,7 +40,7 @@
       "Type a message with no URL or job text",
       "Verify the agent asks for a URL or job text instead of guessing"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",

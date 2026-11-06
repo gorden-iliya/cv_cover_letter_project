@@ -106,3 +106,17 @@ Files: prd.json, progress.txt
 Notes for next:
 - PowerShell tool blocks `python -m pytest`; use Bash tool (cd to project && python -m pytest -q). Long quoted bash one-liners also blocked -> write helper script to %TEMP%
 - next: F3 (single Bedrock converse fn) — client.converse exists, but F3 step needs chat agent/extractor/generators/validator callers; only CV generator in slice 1 -> verify F3 when all callers exist (end of slice 3/5), or now partially and leave false. Next slice-1 items: F4 (chat), F5 (missing CV), F6 (toolConfig, tailor_application only), F11, F12
+
+## 2026-11-06 — F4
+Task: F4 "Terminal chat starts and asks for a job" -> passes=true. F3 skipped (callers not built yet, stays false).
+Decisions:
+- agent/chat.py ChatAgent: Converse tool-use loop, tools = modules w/ TOOL_SPEC+handle, MAX_TOOL_TURNS=8 per user msg; tool exceptions/unknown tool -> toolResult status=error (chat never crashes); converse injectable for tests
+- toolConfig omitted when no tools (Bedrock rejects empty tools list); tools/__init__.py TOOLS=[] -> add tailor_application next
+- greeting printed by code (GREETING) -> prompt always asks for URL/text; "ask instead of guessing" via prompts/chat_system.py CHAT_SYSTEM
+- main.chat_loop(agent, read, write) injectable; exit/quit/EOF/Ctrl+C end chat
+- verified: pytest (20 pass) + real run via %TEMP%/verify_f4.py (env ALLOWED_JOB_SITES + MAX_TOKENS_PER_CALL set in subprocess only; real Bedrock) -> greeting shown, "hi, can you help..." -> model asked for link or job text
+Files: agent/chat.py, prompts/chat_system.py, tools/__init__.py, main.py, tests/test_chat.py, prd.json
+Notes for next:
+- HUMAN still: add ALLOWED_JOB_SITES + MAX_TOKENS_PER_CALL to real .env (verification works around it via subprocess env)
+- Bash tool: no `VAR=x cmd`, no $TEMP/$(...) vars -> write helper to C:/Users/iliya/AppData/Local/Temp and call with literal path
+- next: F5 (missing CV) needs tailor_application (or CV check) -> build tools/tailor_application.py (CV generator only in slice 1) + register in TOOLS; then F6, F11, F12
