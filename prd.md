@@ -74,7 +74,7 @@ Tool behavior, the validator schema and the output layout are defined in `AGENT_
 | `MAX_VALIDATION_ROUNDS` | Cap on the critic loop | `2` |
 | `MAX_TOKENS_PER_CALL` | Max output tokens per Bedrock call | (set) |
 | `CHROME_HEADLESS` | Run Chrome without a window | `false` |
-| `ALLOWED_JOB_SITES` | Comma-separated allowed hosts, e.g. `jobs.lever.co,boards.greenhouse.io,comeet.com` | (required) |
+| `ALLOWED_JOB_SITES` | Comma-separated allowed hosts, e.g. `jobs.lever.co,greenhouse.io,comeet.com` (`greenhouse.io`, not `boards.greenhouse.io`: it redirects to `job-boards.greenhouse.io`) | (required) |
 | `CV_PATH` | Original CV | `cv/original_cv.md` |
 | `PROFILE_PATH` | User profile | `cv/profile.md` |
 | `OUTPUT_DIR` | Output root | `output` |

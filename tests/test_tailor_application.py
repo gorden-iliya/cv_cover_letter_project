@@ -131,6 +131,26 @@ def test_version_numbers_never_reuse(tmp_path):
     assert new_version_dir(str(tmp_path), job).name == "v8"
 
 
+def test_version_folder_contents_and_reprompt_keeps_v1(tmp_path, fake_converse):
+    settings = _settings(tmp_path, rounds=2)  # fake validator always FAILs -> 2 rounds
+    job = dict(FETCHED_JOB, company="ACME Corp. (EU)", title="Senior DevOps / SRE Engineer")
+    r1 = tailor_application.handle(settings, job)
+    v1 = Path(r1["version_dir"])
+    folder = v1.parent.name
+    assert folder == "acme-corp-eu_senior-devops-sre-engineer"
+    assert folder == folder.lower() and all(c.isalnum() or c in "-_" for c in folder)
+    assert sorted(p.name for p in v1.iterdir()) == [
+        "cover_letter.md", "cv.md", "job.md", "validation_round_1.json", "validation_round_2.json"]
+    assert len(r1["rounds"]) == 2
+    snapshot = {p.name: p.read_bytes() for p in v1.iterdir()}
+
+    r2 = tailor_application.handle(settings, job, feedback="make the cover letter shorter", target="letter")
+    v2 = Path(r2["version_dir"])
+    assert v2 == v1.parent / "v2"
+    assert {"cv.md", "cover_letter.md", "job.md", "validation_round_1.json"} <= {p.name for p in v2.iterdir()}
+    assert {p.name: p.read_bytes() for p in v1.iterdir()} == snapshot  # v1 untouched
+
+
 def test_letter_prompt_contains_tailored_cv_job_and_profile(tmp_path, fake_converse):
     profile_path = tmp_path / "profile.md"
     profile_path.write_text(PROFILE, encoding="utf-8")
@@ -423,3 +443,116 @@ def test_validator_error_round_regenerates_nothing(tmp_path, monkeypatch):
     assert len(calls) == 3  # 2 attempts in round 1, 1 in round 2, same prompt (no regeneration)
     assert calls[0] == calls[2]
     assert [r["issue_count"] for r in result["rounds"]] == [1, 1]
+
+
+# --- re-prompts (F20) ---
+
+PASSED = dict(VALIDATION, verdict="PASS", fit_score=8, issues=[])
+
+
+def test_reprompt_letter_keeps_cv_and_revalidates(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [PASSED])
+    prompts = _spy_prompts(monkeypatch)
+    settings = _settings(tmp_path)
+    first = tailor_application.handle(settings, JOB)
+    n_log, n_prompts = len(log), len(prompts)
+    second = tailor_application.handle(settings, JOB, feedback="make the cover letter shorter", target="letter")
+    assert log[n_log:] == ["letter", "validator"]  # CV not regenerated, validation runs again
+    assert second["cv"] == first["cv"] == "cv-1\n"
+    assert second["cover_letter"] == "letter-2\n"
+    assert "<previous_letter>\nletter-1" in prompts[n_prompts + 0] and "make the cover letter shorter" in prompts[n_prompts + 0]
+    assert "<tailored_cv>\ncv-1" in prompts[n_prompts + 0]
+    assert "cv-1\n" in prompts[n_prompts + 1] and "letter-2\n" in prompts[n_prompts + 1]
+    assert (Path(second["version_dir"]) / "cv.md").read_text(encoding="utf-8") == "cv-1\n"
+    assert Path(second["version_dir"]).name == "v2"
+
+
+def test_reprompt_cv_regenerates_cv_from_previous_and_letter_follows(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [PASSED])
+    prompts = _spy_prompts(monkeypatch)
+    settings = _settings(tmp_path)
+    tailor_application.handle(settings, JOB)
+    n_log, n_prompts = len(log), len(prompts)
+    feedback = "emphasize my Kubernetes experience in the CV"
+    result = tailor_application.handle(settings, JOB, feedback=feedback, target="cv")
+    assert log[n_log:] == ["cv", "letter", "validator"]
+    assert "<previous_cv>\ncv-1" in prompts[n_prompts + 0] and feedback in prompts[n_prompts + 0]
+    assert "<original_cv>" in prompts[n_prompts + 0]  # facts still come from the original CV
+    assert "<tailored_cv>\ncv-2" in prompts[n_prompts + 1] and "<previous_letter>\nletter-1" in prompts[n_prompts + 1]
+    assert result["cv"] == "cv-2\n" and result["cover_letter"] == "letter-2\n"
+
+
+def test_reprompt_both_starts_from_previous_documents(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [PASSED])
+    prompts = _spy_prompts(monkeypatch)
+    settings = _settings(tmp_path)
+    tailor_application.handle(settings, JOB)
+    n_log, n_prompts = len(log), len(prompts)
+    tailor_application.handle(settings, JOB, feedback="more formal")
+    assert log[n_log:] == ["cv", "letter", "validator"]
+    assert "<previous_cv>\ncv-1" in prompts[n_prompts + 0] and "<previous_letter>\nletter-1" in prompts[n_prompts + 1]
+
+
+def test_reprompt_base_is_best_attempt_of_previous_call(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [dict(VALIDATION, issues=_issue("cv", 1)),
+                                   dict(VALIDATION, issues=_issue("cv", 3)), PASSED])
+    prompts = _spy_prompts(monkeypatch)
+    settings = _settings(tmp_path, rounds=2)
+    first = tailor_application.handle(settings, JOB)
+    assert first["cv"] == "cv-1\n"  # best attempt, not the last
+    n_prompts = len(prompts)
+    tailor_application.handle(settings, JOB, feedback="shorter letter", target="letter")
+    assert "<previous_letter>\nletter-1" in prompts[n_prompts + 0] and "<tailored_cv>\ncv-1" in prompts[n_prompts + 0]
+
+
+def test_reprompt_fix_rounds_keep_previous_base(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [PASSED, dict(VALIDATION, issues=_issue("letter")), PASSED])
+    prompts = _spy_prompts(monkeypatch)
+    settings = _settings(tmp_path, rounds=2)
+    tailor_application.handle(settings, JOB)
+    n_log, n_prompts = len(log), len(prompts)
+    result = tailor_application.handle(settings, JOB, feedback="shorter", target="letter")
+    assert log[n_log:] == ["letter", "validator", "letter", "validator"]
+    assert "<previous_letter>\nletter-1" in prompts[n_prompts + 2] and "fix letter 0" in prompts[n_prompts + 2]
+    assert result["passed"] is True and result["cv"] == "cv-1\n"
+
+
+def test_first_call_has_no_previous_documents(tmp_path, monkeypatch):
+    _loop_fake(monkeypatch, [PASSED])
+    prompts = _spy_prompts(monkeypatch)
+    tailor_application.handle(_settings(tmp_path), JOB, feedback="shorter", target="letter")
+    # nothing to start from yet: both documents are generated, without previous blocks
+    assert len(prompts) == 3
+    assert all("<previous_" not in p for p in prompts)
+
+
+def test_other_job_does_not_reuse_previous_documents(tmp_path, monkeypatch):
+    log = _loop_fake(monkeypatch, [PASSED])
+    prompts = _spy_prompts(monkeypatch)
+    settings = _settings(tmp_path)
+    tailor_application.handle(settings, JOB)
+    n_log, n_prompts = len(log), len(prompts)
+    tailor_application.handle(settings, FETCHED_JOB, feedback="shorter", target="letter")
+    assert log[n_log:] == ["cv", "letter", "validator"]
+    assert all("<previous_" not in p for p in prompts)
+
+
+def test_original_cv_unchanged_after_full_run_and_two_reprompts(tmp_path, monkeypatch):
+    cv = tmp_path / "cv" / "original_cv.md"
+    cv.parent.mkdir()
+    cv.write_bytes(Path(EXAMPLE_CV).read_bytes())
+    before = (hashlib.sha256(cv.read_bytes()).hexdigest(), cv.stat().st_mtime_ns)
+    log = _loop_fake(monkeypatch, [dict(VALIDATION, issues=_issue("cv")), PASSED])
+    settings = _settings(tmp_path, cv_path=str(cv), rounds=2)
+    tailor_application.handle(settings, JOB)
+    tailor_application.handle(settings, JOB, feedback="make the cover letter shorter", target="letter")
+    tailor_application.handle(settings, JOB, feedback="emphasize my Kubernetes experience in the CV", target="cv")
+    assert log.count("cv") >= 3  # the CV generator really ran (fix round + cv re-prompt)
+    assert (hashlib.sha256(cv.read_bytes()).hexdigest(), cv.stat().st_mtime_ns) == before
+    assert sorted(p.name for p in cv.parent.iterdir()) == ["original_cv.md"]  # nothing written next to it
+
+
+def test_invalid_target_rejected(tmp_path, fake_converse):
+    with pytest.raises(ValueError):
+        tailor_application.handle(_settings(tmp_path), JOB, target="email")
+    assert fake_converse == []

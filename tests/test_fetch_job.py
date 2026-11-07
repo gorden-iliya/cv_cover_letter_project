@@ -204,6 +204,15 @@ def test_disallowed_url_rejected_before_browser(extraction, url):
     assert opener.opened == [] and fake.calls == [] and extraction["calls"] == []
 
 
+@pytest.mark.parametrize("url", ["file://jobs.lever.co/C:/secret.txt", "ftp://jobs.lever.co/acme/1",
+                                 "chrome://jobs.lever.co/settings", "view-source:https://jobs.lever.co/acme/1"])
+def test_non_http_scheme_rejected_even_with_allowed_host(extraction, url):
+    fake = FakeBrowser()
+    result, opener = _run(fake, url=url)
+    assert result["reason"] == "not_allowed"
+    assert opener.opened == [] and fake.calls == [] and extraction["calls"] == []
+
+
 def test_subdomain_of_allowed_host_accepted(extraction):
     result, _ = _run(FakeBrowser(final_url="https://eu.jobs.lever.co/acme/1"), url="https://eu.jobs.lever.co/acme/1")
     assert result["ok"] is True and result["job"]["source_host"] == "eu.jobs.lever.co"
@@ -222,7 +231,22 @@ def test_redirect_off_allowlist_rejected_and_no_job_text_used(extraction):
     assert extraction["calls"] == []
 
 
-@pytest.mark.parametrize("page", ["captcha", "login_required", "empty_page"])
+def test_redirect_check_uses_list_pages_url_not_requested_url(extraction):
+    # new_page reports the requested (allowed) URL; only list_pages shows where the page ended up.
+    fake = FakeBrowser(final_url="http://127.0.0.1:8000/landing")
+    result, _ = _run(fake, settings=_settings(sites=("jobs.lever.co",)))
+    assert fake.calls[0] == ("new_page", {"url": JOB_URL, "timeout": fetch_job.NAVIGATION_TIMEOUT_MS})
+    assert result["reason"] == "not_allowed" and "job" not in result
+
+
+def test_redirect_within_allowlist_reports_final_url(extraction):
+    final = "https://eu.jobs.lever.co/acme/123"
+    result, _ = _run(FakeBrowser(final_url=final))
+    assert result["ok"] is True
+    assert result["job"]["final_url"] == final and result["job"]["source_host"] == "eu.jobs.lever.co"
+
+
+@pytest.mark.parametrize("page",["captcha", "login_required", "empty_page"])
 def test_blocked_pages_return_reason(extraction, page):
     extraction["reply"] = {"page": page, "title": "", "company": "", "location": "", "description": ""}
     result, _ = _run(FakeBrowser())
