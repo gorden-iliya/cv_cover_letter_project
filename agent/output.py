@@ -26,8 +26,9 @@ def new_version_dir(output_dir: str, job: dict) -> Path:
 
 
 def job_markdown(job: dict) -> str:
+    """Every job field labeled by name; missing ones (pasted text) are written as 'unknown'."""
     lines = [f"# {job.get('title') or 'Unknown role'}", ""]
-    for key in JOB_FIELDS[1:-1]:
+    for key in JOB_FIELDS[:-1]:
         lines.append(f"- {key}: {job.get(key) or 'unknown'}")
     lines += ["", "## description", "", job.get("description", "")]
     return "\n".join(lines) + "\n"

@@ -29,7 +29,7 @@
       "Verify the chat agent, extractor, CV generator, letter generator and validator all use it with BEDROCK_MODEL_ID",
       "Verify MAX_TOKENS_PER_CALL is passed as the max output tokens"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -60,7 +60,7 @@
       "Verify it contains only fetch_job and tailor_application",
       "Verify no Chrome DevTools MCP tool is passed to the model directly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -72,7 +72,7 @@
       "Verify the agent's code connects to chrome-devtools-mcp over stdio using the Python mcp SDK",
       "Verify fetch_job returns ok=true with title, company, location, source_host, final_url and description"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -83,7 +83,7 @@
       "On a page with a 'Show more' button, verify click is called once followed by a second take_snapshot",
       "Verify no Bedrock call chooses which MCP tool to run"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -94,7 +94,7 @@
       "Verify the snapshot text is wrapped in <job_posting> delimiters in the extraction prompt",
       "Verify both jobs return all job fields without site-specific code"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -105,7 +105,7 @@
       "Verify the agent explains the reason in one sentence and asks for the job text",
       "Paste the job text and verify tailoring continues from it"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -262,7 +262,7 @@
       "Open job.md in a version folder",
       "Verify it contains title, company, location, source_host, final_url and description"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "output",
@@ -284,7 +284,7 @@
       "Give a URL on a subdomain of an allowed host and verify it is accepted",
       "Verify the check happens before any browser navigation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "security",
@@ -313,7 +313,7 @@
       "Verify it includes --isolated, --no-usage-statistics, --no-category-network, --no-category-performance, --no-category-emulation and --no-javascript-evaluation, and does NOT include --no-category-debugging (it removes take_snapshot)",
       "Verify --headless is added only when CHROME_HEADLESS=true"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "security",
@@ -323,7 +323,7 @@
       "Verify each call is rejected in code",
       "Verify only navigate_page, new_page, take_snapshot, click, wait_for and list_pages are allowed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "security",
