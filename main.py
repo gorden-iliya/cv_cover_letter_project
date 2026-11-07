@@ -28,6 +28,9 @@ def result_printer(write=print):
     def on_tool_result(name: str, result: dict, elapsed: float) -> None:
         if name == "tailor_application":
             write("\n" + format_result(result, elapsed))
+        elif name == "fetch_job" and result.get("reason") == "not_allowed":
+            # The spec fixes this exact wording, so code prints it instead of trusting the model's paraphrase.
+            write("\n" + result["message"])
     return on_tool_result
 
 

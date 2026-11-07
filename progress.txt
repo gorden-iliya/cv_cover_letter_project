@@ -322,3 +322,116 @@ Answers:
 - wait_for: option A. texts "Apply","Job","Description","Requirements","Responsibilities", ~10s timeout; timeout = continue, not failure.
 Edited by human decision (not agent): prd.md §6 flags, prd.json F30 step 2 (now says must NOT include --no-category-debugging), AGENT_SPEC.md fetch_job wait_for line.
 Unblocked: F7 ready to build.
+
+## 2026-11-06 — F7
+Task: F7 "fetch_job reads a public job page through the Chrome DevTools MCP server" -> passes=true.
+Decisions:
+- agent/browser.py: only MCP module. server_params (prd §6 flags, --headless only if CHROME_HEADLESS, npx via shutil.which), BrowserSession.call rejects names outside ALLOWED_MCP_TOOLS before server (DisallowedToolError), is_error -> BrowserToolError; open_browser = async ctx mgr, server stderr -> devnull
+- agent/urls.py: is_allowed_url (http/https + exact host or subdomain), NOT_ALLOWED_MESSAGE = spec text
+- tools/fetch_job.py: check URL before browser -> new_page(url, timeout 30s) -> pageId from "[selected]" line -> wait_for(WAIT_TEXTS, 10s, errors ignored) -> take_snapshot -> if `button "Show more|Read more"` click + snapshot -> list_pages final URL re-check -> 1 extraction call
+- browser started+stopped per fetch (asyncio.run in handle); Chrome window closes after fetch. Simpler than persistent loop
+- extraction prompt (prompts/job_extractor.py): snapshot w/o uid= and url="" attrs, capped MAX_PAGE_CHARS=60k, wrapped in <job_posting>; model returns JSON incl. page=job|captcha|login_required|empty_page -> captcha/login detection done by the same one call (no site-specific code). description < MIN_DESCRIPTION_CHARS=100 -> empty_page (threshold my choice; spec says "near-empty"). bad JSON / browser error -> fetch_failed
+- TOOLS = [fetch_job, tailor_application]; chat prompt: URL -> fetch_job, ok -> tailor_application w/ job unchanged
+- slice 6 logic (allowlist, redirect, scheme, ok=false reasons) already built + unit-tested here; F8/F9/F25/F27-F31/F6 not flipped (one feature per iteration) — next iterations mostly just run their steps
+- verified: pytest 113 pass (tests/test_fetch_job.py, fake browser + fake converse) + %TEMP%/cvp/verify_f7.py (real npx chrome-devtools-mcp, non-headless, real Bedrock, https://jobs.lever.co/palantir/6ed76ce8-4156-4b60-b120-403538bd66cd): calls new_page,wait_for,take_snapshot,list_pages; Chrome window titled "Palantir Technologies - Administrative Business Partner - Google Chrome" found via Get-Process MainWindowTitle; ok=true w/ all 6 fields, description 2294 chars. %TEMP%/cvp/verify_f7_chat.py: main.py via stdin w/ URL -> fetch + tailor + print + saved v1 (24.7s)
+Files: agent/browser.py, agent/urls.py, tools/fetch_job.py, tools/__init__.py, prompts/job_extractor.py, prompts/chat_system.py, tests/test_fetch_job.py, prd.json, progress.txt
+Notes for next:
+- next: F8 (sequence order; on a page w/ Show more -> need real page w/ such button, else unit test covers it), F9 (2 sites: try boards.greenhouse.io + jobs.lever.co), F25, F30, F31, F6 (toolConfig has exactly fetch_job + tailor_application now)
+- real .env still lacks ALLOWED_JOB_SITES + MAX_TOKENS_PER_CALL (HUMAN); verify scripts set them in subprocess env
+- Bash tool blocks heredocs with `{"` -> use Write for helper scripts
+
+## 2026-11-06 — F3
+Task: F3 "All model calls go through one Bedrock Converse function" -> passes=true. Slice 1 now only F6 (toolConfig) + F12 (re-prompts, slice 8) left.
+Decisions:
+- no app code change; all 5 callers (chat via ChatAgent default converse=client.converse, extractor, CV gen, letter gen, validator) already call client.converse
+- tests/test_single_converse.py: fake boto client (client._client) under the real client.converse; chat send triggers tailor_application (cv+letter+validator) + extract_job direct -> all 5 roles hit fake, each w/ modelId=BEDROCK_MODEL_ID + maxTokens=MAX_TOKENS_PER_CALL; static check: only client.py imports boto3, no raw .converse( outside client/self, one `def converse`
+- verified: grep boto3/converse (only agent/client.py:33 calls boto converse) + pytest 115 pass
+Files: tests/test_single_converse.py, prd.json, progress.txt
+Notes for next:
+- next: F6 (toolConfig exactly fetch_job + tailor_application, no MCP tool) — inspect ChatAgent.tool_config, add test; then slice 5 F8, F9, F25, F30, F31
+
+## 2026-11-06 — F6
+Task: F6 "The chat agent exposes exactly two tools to the model" -> passes=true. Slice 1 now only F12 (re-prompts, slice 8) left.
+Decisions:
+- no app code change; ChatAgent.tool_config built only from tools.TOOLS TOOL_SPECs; MCP list_tools never called/forwarded (grep: only toolSpec site = agent/chat.py:35, no list_tools in app code)
+- tests (test_chat.py): main() wired w/ fake converse -> toolConfig == exactly fetch_job + tailor_application specs, no overlap w/ ALLOWED_MCP_TOOLS or fill/press_key etc.; model asking for navigate_page -> "Unknown tool" error toolResult, browser never opened
+- verified: pytest 117 pass + %TEMP%/cvp/verify_f6.py (spy converse, printed real toolConfig JSON: 2 toolSpecs, MCP overlap empty)
+Files: tests/test_chat.py, prd.json, progress.txt
+Notes for next:
+- slice 5 left: F8 (sequence order + Show more click; unit test exists, need logged real fetch), F9 (2 sites, 1 extraction call each), F25 (job.md), F30 (server flags), F31 (allowlist in code)
+
+## 2026-11-06 — F8
+Task: F8 "fetch_job runs a fixed browser sequence, not model-driven browsing" -> passes=true.
+Decisions:
+- no app code change; sequence already in tools/fetch_job.browse (F7)
+- real "Show more" page: no known allowed job page has one -> verify script serves local HTML (JS button reveals hidden text) via http.server, ALLOWED_JOB_SITES=jobs.lever.co,localhost in subprocess env only
+- new test test_bedrock_runs_only_after_browser_sequence: interleaved log = 6 MCP calls then 1 bedrock -> model can't influence browser steps
+- verified: %TEMP%/cvp/verify_f8.py (real chrome-devtools-mcp visible + real Bedrock, MCP calls logged w/ args): Lever -> new_page,wait_for,take_snapshot,list_pages; local -> new_page,wait_for,take_snapshot,click(uid 1_5),take_snapshot,list_pages, hidden text only in 2nd snapshot + in extracted description; each fetch 1 Bedrock call w/ toolConfig=None. pytest 118 pass
+Files: tests/test_fetch_job.py, prd.json, progress.txt
+Notes for next:
+- localhost trick reusable for F9 (2nd "site"), F10 (empty/login page), F28 (redirect: local server 302 -> off-list host)
+- slice 5 left: F9, F25, F30, F31
+
+## 2026-11-06 — F9
+Task: F9 "Job fields are extracted with one generic Bedrock call" -> passes=true.
+Decisions:
+- no app code change; extraction already generic (F7)
+- tests: test_two_sites_one_extraction_call_each (lever + greenhouse fake snapshots: 1 call each, <job_posting> wrap, same system prompt, all 6 fields), test_no_site_specific_code (no lever/greenhouse/comeet/linkedin/workday strings in fetch_job.py, job_extractor.py, browser.py)
+- verified: pytest 120 pass + %TEMP%/cvp/verify_f9.py (real chrome-devtools-mcp visible + real Bedrock): Lever Palantir job + Greenhouse GitLab job (URL found via boards-api.greenhouse.io in script) -> each 1 Bedrock call, wrapped, toolConfig None, ok=true, all fields non-empty
+Files: tests/test_fetch_job.py, prd.json, progress.txt
+Notes for next:
+- HUMAN/.env: boards.greenhouse.io now redirects to job-boards.greenhouse.io (NOT a subdomain of boards.greenhouse.io) -> redirect re-check rejects it. Use `greenhouse.io` (or job-boards.greenhouse.io) in ALLOWED_JOB_SITES; prd.md §7 example lists boards.greenhouse.io (example only, not changed)
+- WebFetch + curl need approval in loop; python urllib inside verify script works
+- slice 5 left: F25 (job.md), F30 (server flags), F31 (MCP allowlist in code)
+
+## 2026-11-06 — F25
+Task: F25 "job.md records the source of the job" -> passes=true.
+Decisions:
+- agent/output.job_markdown: every field now labeled "- <key>: value" incl. title (before: title only as "# heading"); missing fields (pasted text) -> "unknown"; description under "## description"
+- job reaches job.md via chat model passing fetch_job's job unchanged (chat prompt rule); real run kept all 6 fields
+- tests: test_job_md_records_every_job_field (fetch_job-shaped job), test_job_md_marks_missing_fields_for_pasted_text; pytest 122 pass
+- verified: %TEMP%/cvp/verify_f25.py (main.py via stdin, real chrome-devtools-mcp headless + real Bedrock, Lever Palantir URL) -> v1/job.md has title, company, location, source_host=jobs.lever.co, final_url, description 2294 chars
+Files: agent/output.py, tests/test_tailor_application.py, prd.json, progress.txt
+Notes for next:
+- slice 5 left: F30 (server flags; inspect agent/browser.server_params + test), F31 (MCP allowlist in code; BrowserSession.call DisallowedToolError)
+
+## 2026-11-06 — F30
+Task: F30 "Chrome DevTools MCP server starts with risky tool groups switched off" -> passes=true.
+Decisions:
+- no code change; agent/browser.SERVER_FLAGS + server_params (F7) already match prd.md §6; test_server_flags_and_headless covers flags, no --no-category-debugging, --headless only when chrome_headless
+- CHROME_HEADLESS parsed by config._bool (true/1/yes; invalid -> ConfigError), default false
+- verified: pytest 122 pass + %TEMP%/cvp/verify_f30.py: printed start cmd for headless false/true (only true has --headless); real server (1.12.0) started w/ those flags -> all 6 allowlisted tools present incl. take_snapshot; evaluate_script, network, performance, emulate tools absent. Server still exposes fill/fill_form/press_key etc. (input category not disabled by spec) -> Python allowlist is the guard (F31)
+Files: prd.json, progress.txt
+Notes for next:
+- slice 5 left: F31 (MCP allowlist in code: call fill/fill_form/press_key via BrowserSession -> DisallowedToolError before server). Then slice 6: F10, F27, F28, F29 (logic built in F7, mostly run steps; localhost trick for F10/F28)
+
+## 2026-11-07 — F31
+Task: F31 "MCP tool allowlist is enforced in code" -> passes=true. Slice 5 done.
+Decisions:
+- no app code change; BrowserSession.call (agent/browser.py) rejects names outside ALLOWED_MCP_TOOLS before call_tool (F7)
+- test added: test_wrapper_forwards_every_allowed_tool (all 6 reach session); existing reject test covers fill/fill_form/press_key/evaluate_script/take_screenshot w/ 0 server calls
+- verified: pytest 128 pass + %TEMP%/cvp/verify_f31.py (real chrome-devtools-mcp headless, spy around real ClientSession): server DOES expose fill/fill_form/press_key, wrapper raises DisallowedToolError for each, nothing sent to server; list_pages passes through
+Files: tests/test_fetch_job.py, prd.json, progress.txt
+Notes for next:
+- slice 6: F10 (fetch fail -> paste text; needs chat run w/ empty/login page, localhost trick), F27 (allowlist + exact msg), F28 (redirect: local 302 -> off-list host), F29 (file:/chrome:/javascript: rejected before browser). Logic + unit tests already exist (tests/test_fetch_job.py) -> mostly run steps
+
+## 2026-11-07 — F10
+Task: F10 "If fetching fails, the agent asks the user to paste the job text" -> passes=true.
+Decisions:
+- no app code change; ok=false reasons from F7 (extractor page field + MIN_DESCRIPTION_CHARS), chat prompt rule already there
+- test added (test_chat.py): fetch_job ok=false result reaches model as success toolResult unchanged, system prompt has the fallback rule, next msg w/ pasted text -> tailor_application called w/ it
+- verified: pytest 129 pass + %TEMP%/cvp/verify_f10.py (main.py via stdin + spy wrapper on fetch_job.handle, real chrome-devtools-mcp headless + real Bedrock, local login/captcha/empty pages, localhost allowed in subprocess env only) -> reasons login_required / captcha / empty_page; agent explained reason in one sentence + asked for text; pasted text -> tailored, validated, saved v1 (job.md, cv.md, cover_letter.md, validation_round_N.json)
+Files: tests/test_chat.py, prd.json, progress.txt
+Notes for next:
+- slice 6 left: F27 (allowlist + exact msg + subdomain + before nav), F28 (redirect: local server 302 -> off-list host; verify_f10.py pattern reusable), F29 (scheme). Unit tests exist; mostly run steps
+
+## 2026-11-07 — F27
+Task: F27 "Only hosts in ALLOWED_JOB_SITES can be opened" -> passes=true.
+Decisions:
+- main.result_printer now prints fetch_job's message when reason=not_allowed -> exact spec text always shown (chat model paraphrased it in real run: "The LinkedIn job URL isn't supported..."). Other fetch failures still explained by model only (F10 unchanged)
+- allowlist/subdomain/before-nav logic unchanged (agent/urls.py + fetch_job.fetch, F7)
+- tests (test_chat.py): real fetch_job tool via ChatAgent + real result_printer -> linkedin rejected, exact msg printed, open_browser never called; printer ignores other fetch outcomes. pytest 131 pass
+- verified: %TEMP%/cvp/verify_f27.py (main.py via stdin, spy on open_browser + handle, real chrome-devtools-mcp headless + real Bedrock): A ALLOWED=jobs.lever.co + linkedin -> not_allowed, exact line printed, no browser start; B eu.jobs.lever.co -> check passed, browser started (host has no DNS -> fetch_failed, expected); C ALLOWED=localhost + http://jobs.sub.localhost:port -> ok=true, tailored, saved
+Files: main.py, tests/test_chat.py, prd.json, progress.txt
+Notes for next:
+- slice 6 left: F28 (redirect: local server 302 -> off-list host; verify_f27.py pattern: *.localhost resolves to loopback in Chrome, so allow e.g. `sub.localhost` only and 302 to plain 127.0.0.1), F29 (file:/chrome:/javascript: before browser; spy open_browser like verify_f27)

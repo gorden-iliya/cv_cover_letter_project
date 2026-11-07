@@ -130,3 +130,93 @@ def test_main_exits_with_message_naming_missing_cv(tmp_path, monkeypatch, capsys
     assert main.main() == 1
     err = capsys.readouterr().err
     assert "Original CV not found" in err and missing in err
+
+
+def test_tool_config_sent_to_bedrock_has_exactly_the_two_spec_tools(monkeypatch):
+    from agent.browser import ALLOWED_MCP_TOOLS
+    from tools import TOOLS
+
+    fake = FakeConverse([_text_reply("Paste a job URL.")])
+    # main() builds the agent with tools.TOOLS; capture that exact agent.
+    monkeypatch.setattr(main, "load_settings", _settings)
+    monkeypatch.setattr(main, "chat_loop", lambda agent: agent.send("hi"))
+    monkeypatch.setattr(main, "ChatAgent", lambda s, tools, **kw: ChatAgent(s, tools, converse=fake, **kw))
+    main.main()
+
+    sent = fake.calls[0]["tool_config"]
+    assert list(sent) == ["tools"]
+    names = [t["toolSpec"]["name"] for t in sent["tools"]]
+    assert sorted(names) == ["fetch_job", "tailor_application"]
+    assert sent == {"tools": [{"toolSpec": t.TOOL_SPEC} for t in TOOLS]}
+    assert not set(names) & ALLOWED_MCP_TOOLS
+    assert not set(names) & {"fill", "fill_form", "press_key", "evaluate_script", "navigate_page", "take_snapshot"}
+
+
+def test_fetch_failure_reaches_model_then_pasted_text_is_tailored():
+    from agent.chat import CHAT_SYSTEM
+
+    fail = {"ok": False, "reason": "login_required", "message": "The page asks you to log in."}
+    tailored = []
+    fetch = _fake_tool("fetch_job", lambda s, **kw: fail)
+    tailor = _fake_tool("tailor_application", lambda s, **kw: tailored.append(kw) or {"version_dir": "v1"})
+    pasted = "Senior DevOps Engineer at Acme. Requirements: Kubernetes, Terraform."
+    fake = FakeConverse([
+        _tool_reply("fetch_job", {"url": "https://jobs.lever.co/acme/1"}),
+        _text_reply("The page needs a login. Please paste the job text."),
+        _tool_reply("tailor_application", {"job": {"description": pasted, "company": "Acme"}}, "t2"),
+        _text_reply("Saved to v1."),
+    ])
+    agent = ChatAgent(_settings(), [fetch, tailor], converse=fake)
+
+    reply = agent.send("https://jobs.lever.co/acme/1")
+    assert "paste the job text" in reply
+    result = agent.messages[2]["content"][0]["toolResult"]
+    assert result["status"] == "success" and result["content"][0]["json"] == fail  # model sees the reason
+    assert "If fetching a job fails, explain the reason in one sentence and ask the user to paste the job text" in CHAT_SYSTEM
+
+    agent.send(pasted)
+    assert tailored == [{"job": {"description": pasted, "company": "Acme"}}]
+
+
+def test_not_allowed_site_prints_exact_message_and_never_opens_browser(monkeypatch):
+    from agent.urls import NOT_ALLOWED_MESSAGE
+    from tools import TOOLS, fetch_job
+
+    opened = []
+    monkeypatch.setattr(fetch_job, "open_browser", lambda *a, **k: opened.append(a))
+    out = []
+    fake = FakeConverse([_tool_reply("fetch_job", {"url": "https://www.linkedin.com/jobs/view/1"}),
+                         _text_reply("That site is not allowed. Please paste the job text.")])
+    agent = ChatAgent(_settings(), TOOLS, converse=fake, on_tool_result=main.result_printer(out.append))
+    agent.send("https://www.linkedin.com/jobs/view/1")
+
+    result = agent.messages[2]["content"][0]["toolResult"]["content"][0]["json"]
+    assert result == {"ok": False, "reason": "not_allowed", "message": NOT_ALLOWED_MESSAGE}
+    assert out == ["\n" + NOT_ALLOWED_MESSAGE]
+    assert opened == []
+
+
+def test_result_printer_ignores_other_fetch_outcomes():
+    out = []
+    printer = main.result_printer(out.append)
+    printer("fetch_job", {"ok": False, "reason": "captcha", "message": "m"}, 1.0)
+    printer("fetch_job", {"ok": True, "job": {}}, 1.0)
+    assert out == []
+
+
+def test_model_cannot_call_an_mcp_tool_directly():
+    from tools import TOOLS
+
+    called = []
+    fake = FakeConverse([_tool_reply("navigate_page", {"url": "https://evil.example"}), _text_reply("ok")])
+    agent = ChatAgent(_settings(), TOOLS, converse=fake)
+    import agent.browser as browser
+    orig = browser.open_browser
+    browser.open_browser = lambda *a, **k: called.append(a)  # would record any browser start
+    try:
+        agent.send("go")
+    finally:
+        browser.open_browser = orig
+    result = agent.messages[2]["content"][0]["toolResult"]
+    assert result["status"] == "error" and "Unknown tool: navigate_page" in result["content"][0]["json"]["message"]
+    assert called == []

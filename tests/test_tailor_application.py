@@ -91,6 +91,27 @@ def test_saves_version_folder_and_keeps_original_cv(tmp_path, fake_converse):
     assert hashlib.sha256(Path(EXAMPLE_CV).read_bytes()).hexdigest() == before
 
 
+FETCHED_JOB = {"title": "Platform Engineer", "company": "Globex", "location": "Tel Aviv",
+               "source_host": "jobs.lever.co", "final_url": "https://jobs.lever.co/globex/123",
+               "description": "Run Kubernetes clusters.\nOn-call rotation."}
+
+
+def test_job_md_records_every_job_field(tmp_path, fake_converse):
+    result = tailor_application.handle(_settings(tmp_path), FETCHED_JOB)
+    job_md = (Path(result["version_dir"]) / "job.md").read_text(encoding="utf-8")
+    for key in ("title", "company", "location", "source_host", "final_url"):
+        assert f"- {key}: {FETCHED_JOB[key]}\n" in job_md
+    assert "## description\n\nRun Kubernetes clusters.\nOn-call rotation.\n" in job_md
+
+
+def test_job_md_marks_missing_fields_for_pasted_text(tmp_path, fake_converse):
+    result = tailor_application.handle(_settings(tmp_path), {"description": "Pasted job text"})
+    job_md = (Path(result["version_dir"]) / "job.md").read_text(encoding="utf-8")
+    for key in ("title", "company", "location", "source_host", "final_url"):
+        assert f"- {key}: unknown\n" in job_md
+    assert "Pasted job text" in job_md
+
+
 def test_empty_description_rejected(tmp_path, fake_converse):
     with pytest.raises(ValueError):
         tailor_application.handle(_settings(tmp_path), {"description": "  "})
