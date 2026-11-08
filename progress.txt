@@ -538,3 +538,13 @@ Task: align examples w/ F9 finding. PRD items: none.
 Decisions: .env.example + prd.md §7 example ALLOWED_JOB_SITES -> greenhouse.io (boards.greenhouse.io redirects to job-boards.greenhouse.io, rejected by redirect re-check).
 Files: .env.example, prd.md, progress.txt
 Notes for next: only F26, F34, F36 left (human).
+
+## 2026-11-08 — README
+Task: user-facing README.md (usage guide). PRD items: none.
+Decisions:
+- README = how to install/configure/run; env var table NOT copied, links prd.md §7 (one-fact-one-file rule)
+- CV setup points to cv-pdf-to-markdown-converter skill + its templates/cv_example.md (cv/original_cv.example.md named in spec/prd does not exist in repo)
+- sample terminal output wording checked vs agent/present.py ("Saved to:", "Total run time:") + GREETING in agent/chat.py
+Files: README.md, progress.txt
+Notes for next:
+- FYI human: cv/original_cv.example.md referenced in AGENT_SPEC.md Data + prd.md §8 but missing from repo
