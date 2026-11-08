@@ -3,6 +3,9 @@
 Printed by code, not by the chat model, so the shown documents are exactly what was saved.
 """
 
+import json
+from pathlib import Path
+
 
 def round_line(rounds: list[dict]) -> str:
     parts = []
@@ -28,11 +31,39 @@ def unresolved_block(result: dict) -> list[str]:
     return lines
 
 
+def _injection_details(result: dict) -> list[str]:
+    # The returned validation is only the best attempt, which can be a round where the validator
+    # missed the injection; the saved validation_round_N.json files hold every round.
+    validations = [result["validation"]]
+    for path in sorted(Path(result["version_dir"]).glob("validation_round_*.json")):
+        try:
+            validations.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    details = []
+    for v in validations:
+        for issue in v.get("issues") or []:
+            if issue.get("type") == "prompt_injection" and issue.get("detail") not in details:
+                details.append(issue.get("detail"))
+    return details
+
+
+def injection_warning(result: dict) -> list[str]:
+    details = _injection_details(result)
+    if not details:
+        return []
+    lines = ["", "!! WARNING: possible prompt injection in the job posting. "
+                 "It was treated as data and ignored. Suspicious text:"]
+    lines += [f"- {d}" for d in details]
+    return lines
+
+
 def format_result(result: dict, elapsed_seconds: float) -> str:
     validation = result["validation"]
     gaps = validation.get("gaps") or []
     lines = [
         round_line(result["rounds"]),
+        *injection_warning(result),
         *unresolved_block(result),
         "",
         "# Tailored CV",

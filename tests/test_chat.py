@@ -204,6 +204,64 @@ def test_result_printer_ignores_other_fetch_outcomes():
     assert out == []
 
 
+def test_new_job_url_in_same_chat_fetches_again_and_starts_new_job_folder(tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+
+    from agent import client
+    from agent.chat import CHAT_SYSTEM
+    from tools import tailor_application
+
+    jobs = {
+        "https://jobs.lever.co/acme/1": {"title": "DevOps Engineer", "company": "Acme", "location": "Remote",
+                                         "source_host": "jobs.lever.co", "final_url": "https://jobs.lever.co/acme/1",
+                                         "description": "Acme needs Kubernetes."},
+        "https://jobs.lever.co/globex/2": {"title": "SRE", "company": "Globex", "location": "Berlin",
+                                           "source_host": "jobs.lever.co", "final_url": "https://jobs.lever.co/globex/2",
+                                           "description": "Globex needs Terraform."},
+    }
+    fetched = []
+    fetch = _fake_tool("fetch_job", lambda s, url: fetched.append(url) or {"ok": True, "job": jobs[url]})
+    passed = json.dumps({"verdict": "PASS", "fit_score": 8, "issues": [], "fit_summary": "fits", "gaps": []})
+    prompts = []
+
+    def model(settings, messages, system=None, tool_config=None):
+        prompt = messages[0]["content"][0]["text"]
+        prompts.append(prompt)
+        kind = "validator" if "strict reviewer" in system else "letter" if "cover letter" in system else "cv"
+        text = passed if kind == "validator" else f"{kind} for {'Globex' if 'Globex' in prompt else 'Acme'}"
+        return {"output": {"message": {"role": "assistant", "content": [{"text": text}]}}}
+
+    monkeypatch.setattr(client, "converse", model)
+    settings = Settings("model-x", "eu-west-1", ("jobs.lever.co",), 500, 1, False,
+                        "cv/original_cv.example.md", str(tmp_path / "no_profile.md"), str(tmp_path / "out"))
+    a, b = jobs["https://jobs.lever.co/acme/1"], jobs["https://jobs.lever.co/globex/2"]
+    fake = FakeConverse([
+        _tool_reply("fetch_job", {"url": "https://jobs.lever.co/acme/1"}, "a1"),
+        _tool_reply("tailor_application", {"job": a}, "a2"), _text_reply("Saved."),
+        _tool_reply("tailor_application", {"job": a, "feedback": "make the cover letter shorter",
+                                           "target": "letter"}, "a3"), _text_reply("Saved."),
+        _tool_reply("fetch_job", {"url": "https://jobs.lever.co/globex/2"}, "b1"),
+        _tool_reply("tailor_application", {"job": b}, "b2"), _text_reply("Saved."),
+    ])
+    agent = ChatAgent(settings, [fetch, tailor_application], converse=fake)
+
+    agent.send("https://jobs.lever.co/acme/1")
+    agent.send("make the cover letter shorter")
+    n_prompts = len(prompts)
+    agent.send("https://jobs.lever.co/globex/2")
+
+    assert fetched == ["https://jobs.lever.co/acme/1", "https://jobs.lever.co/globex/2"]  # job B fetched again
+    out = Path(settings.output_dir)
+    assert sorted(p.name for p in (out / "acme_devops-engineer").iterdir()) == ["v1", "v2"]
+    assert sorted(p.name for p in (out / "globex_sre").iterdir()) == ["v1"]  # new folder, starts at v1
+    assert "Globex" in (out / "globex_sre" / "v1" / "job.md").read_text(encoding="utf-8")
+    # job B is a fresh full run: CV + letter + validator, nothing carried over from job A
+    assert len(prompts) - n_prompts == 3
+    assert all("<previous_" not in p and "Acme" not in p for p in prompts[n_prompts:])
+    assert "A new job URL (or new job text) in the same chat starts a new job" in CHAT_SYSTEM
+
+
 def test_model_cannot_call_an_mcp_tool_directly():
     from tools import TOOLS
 

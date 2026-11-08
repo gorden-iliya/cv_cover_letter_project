@@ -4,7 +4,7 @@ from agent.config import Settings
 
 def _settings():
     return Settings("model-x", "eu-west-1", ("jobs.lever.co",), 777, 2, False,
-                    "cv/original_cv.md", "cv/profile.md", "output")
+                    "cv-md/cv.md", "cv/profile.md", "output")
 
 
 class FakeBedrock:

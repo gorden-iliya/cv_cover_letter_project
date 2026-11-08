@@ -16,7 +16,7 @@
     "steps": [
       "Remove MAX_VALIDATION_ROUNDS, CHROME_HEADLESS, CV_PATH, PROFILE_PATH and OUTPUT_DIR from .env",
       "Start the app",
-      "Verify the defaults are 2, false, cv/original_cv.md, cv/profile.md and output"
+      "Verify the defaults are 2, false, cv-md/cv.md, cv/profile.md and output"
     ],
     "passes": true
   },
@@ -126,7 +126,7 @@
       "Run a full tailoring and two re-prompts",
       "Verify the hash is unchanged"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -211,7 +211,7 @@
       "Verify the CV is unchanged and validation runs again",
       "Type 'emphasize my Kubernetes experience in the CV' and verify target=cv and the letter is regenerated too"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -221,7 +221,7 @@
       "Paste the URL of job B in the same chat",
       "Verify the job is fetched again and outputs go to a new <company>_<role> folder"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "output",
@@ -253,7 +253,7 @@
       "Re-prompt once and verify v2/ is created and v1/ is unchanged",
       "Verify the folder name is lowercase and slugified"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "output",
@@ -294,7 +294,7 @@
       "Verify the final URL is read with list_pages",
       "Verify fetch_job returns ok=false with reason not_allowed and no job text is used"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "security",
@@ -303,7 +303,7 @@
       "Give file:///C:/secret.txt, chrome://settings and javascript:alert(1)",
       "Verify each is rejected before the browser is touched"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "security",
@@ -335,7 +335,7 @@
       "Verify the CV does not gain the invented experience",
       "Verify the validator reports a prompt_injection issue and the terminal shows a warning"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "security",
@@ -366,13 +366,13 @@
       "Verify no test calls real Bedrock or launches Chrome",
       "Verify all tests pass"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "testing",
     "description": "One manual end-to-end run succeeds on a real public job page",
     "steps": [
-      "Fill in .env, cv/original_cv.md and cv/profile.md",
+      "Fill in .env, cv-md/cv.md and cv/profile.md",
       "Run python main.py and paste a real job URL from an allowed site",
       "Verify the job is fetched, tailored, validated, printed and saved",
       "Re-prompt once and verify a new version is created"

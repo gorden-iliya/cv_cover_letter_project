@@ -34,7 +34,7 @@ def test_optional_defaults(env):
     s = load_settings()
     assert s.max_validation_rounds == 2
     assert s.chrome_headless is False
-    assert s.cv_path == "cv/original_cv.md"
+    assert s.cv_path == "cv-md/cv.md"
     assert s.profile_path == "cv/profile.md"
     assert s.output_dir == "output"
 

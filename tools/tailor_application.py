@@ -1,16 +1,17 @@
 """tailor_application tool (AGENT_SPEC.md → Tools → 2).
 
 Fixed pipeline in code: CV generator → letter generator → validator, looped until PASS or
-MAX_VALIDATION_ROUNDS, then the version folder. Re-prompt targets (slice 8) come next.
+MAX_VALIDATION_ROUNDS, then the version folder. Re-prompts start from the previous documents.
 """
 
 import json
 import re
+from pathlib import Path
 
 from agent import client
 from agent.config import Settings
 from agent.cv import read_original_cv
-from agent.output import job_markdown, new_version_dir, write_text
+from agent.output import job_dir_name, job_markdown, new_version_dir, write_text
 from agent.profile import read_profile
 from agent.validator import validate
 from prompts.cv_generator import CV_GENERATOR_SYSTEM, build_cv_prompt
@@ -43,7 +44,8 @@ TOOL_SPEC = {
             },
             "feedback": {"type": "string", "description": "The user's refinement request, if any"},
             "target": {"type": "string", "enum": ["cv", "letter", "both"],
-                       "description": "Which document(s) to regenerate. Default both."},
+                       "description": "Which document(s) to regenerate on a re-prompt: letter (only the "
+                                      "cover letter), cv (the CV; the letter follows) or both. Default both."},
         },
     }},
 }
@@ -56,19 +58,29 @@ def _strip_fences(text: str) -> str:
 
 
 def generate_cv(settings: Settings, original_cv: str, job: dict, feedback: str | None = None,
-                fixes: list[str] | None = None) -> str:
-    prompt = build_cv_prompt(original_cv, job, feedback, fixes)
+                fixes: list[str] | None = None, previous: str | None = None) -> str:
+    prompt = build_cv_prompt(original_cv, job, feedback, fixes, previous)
     response = client.converse(settings, [{"role": "user", "content": [{"text": prompt}]}],
                                system=CV_GENERATOR_SYSTEM)
     return _strip_fences(client.response_text(response))
 
 
 def generate_letter(settings: Settings, tailored_cv: str, job: dict, profile: str,
-                    feedback: str | None = None, fixes: list[str] | None = None) -> str:
-    prompt = build_letter_prompt(tailored_cv, job, profile, feedback, fixes)
+                    feedback: str | None = None, fixes: list[str] | None = None,
+                    previous: str | None = None) -> str:
+    prompt = build_letter_prompt(tailored_cv, job, profile, feedback, fixes, previous)
     response = client.converse(settings, [{"role": "user", "content": [{"text": prompt}]}],
                                system=LETTER_GENERATOR_SYSTEM)
     return _strip_fences(client.response_text(response))
+
+
+# Last returned CV + letter per job in this chat process (re-prompt starting point), keyed by
+# OUTPUT_DIR/<company>_<role>. A different job (new URL) has a different key, so it starts fresh.
+_previous: dict[str, dict] = {}
+
+
+def _job_key(settings: Settings, job: dict) -> str:
+    return str(Path(settings.output_dir) / job_dir_name(job))
 
 
 def _fixes_for(validation: dict, doc: str) -> list[str]:
@@ -83,18 +95,29 @@ def _best_attempt(attempts: list[dict]) -> dict:
 def handle(settings: Settings, job: dict, feedback: str | None = None, target: str = "both") -> dict:
     if not (job or {}).get("description", "").strip():
         raise ValueError("job.description is empty: ask the user for the job text.")
+    if target not in ("cv", "letter", "both"):
+        raise ValueError("target must be cv, letter or both.")
     original_cv = read_original_cv(settings)
     profile = read_profile(settings)
 
+    key = _job_key(settings, job)
+    previous = _previous.get(key)
+    if previous and (feedback or target != "both"):
+        # Re-prompt: the previous documents are the starting point; a document not targeted stays as is.
+        cv, letter = previous["cv"], previous["cover_letter"]
+        base_cv, base_letter = cv, letter
+        regen_cv, regen_letter = target in ("cv", "both"), target in ("letter", "both")
+    else:
+        cv = letter = base_cv = base_letter = None
+        regen_cv = regen_letter = True
+
     attempts = []
-    cv = letter = None
     cv_fixes = letter_fixes = None
-    regen_cv = regen_letter = True
     for round_no in range(1, settings.max_validation_rounds + 1):
         if regen_cv:
-            cv = generate_cv(settings, original_cv, job, feedback, cv_fixes)
+            cv = generate_cv(settings, original_cv, job, feedback, cv_fixes, base_cv)
         if regen_letter or regen_cv:  # the letter follows any CV change
-            letter = generate_letter(settings, cv, job, profile, feedback, letter_fixes)
+            letter = generate_letter(settings, cv, job, profile, feedback, letter_fixes, base_letter)
         validation = validate(settings, cv, letter, job, original_cv, profile)
         attempts.append({"round": round_no, "cv": cv, "cover_letter": letter, "validation": validation})
         if validation["verdict"] == "PASS":
@@ -116,6 +139,7 @@ def handle(settings: Settings, job: dict, feedback: str | None = None, target: s
     for a in attempts:
         write_text(version_dir, f"validation_round_{a['round']}.json",
                    json.dumps(a["validation"], indent=2, ensure_ascii=False))
+    _previous[key] = {"cv": final["cv"], "cover_letter": final["cover_letter"]}
     return {"version_dir": str(version_dir), "cv": final["cv"], "cover_letter": final["cover_letter"],
             "validation": final["validation"], "rounds": rounds,
             "passed": final["validation"]["verdict"] == "PASS"}

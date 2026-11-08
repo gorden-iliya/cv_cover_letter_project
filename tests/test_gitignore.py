@@ -21,7 +21,7 @@ def _ignored(path: str) -> bool:
 
 @pytest.mark.parametrize("path", [
     ".env",
-    "cv/original_cv.md",
+    "cv-md/cv.md",
     "cv/profile.md",
     "output/acme_devops-engineer/v1/cv.md",
 ])
