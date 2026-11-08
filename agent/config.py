@@ -10,7 +10,7 @@ REQUIRED = ("BEDROCK_MODEL_ID", "AWS_REGION", "ALLOWED_JOB_SITES", "MAX_TOKENS_P
 DEFAULTS = {
     "MAX_VALIDATION_ROUNDS": "2",
     "CHROME_HEADLESS": "false",
-    "CV_PATH": "cv/original_cv.md",
+    "CV_PATH": "cv-md/cv.md",
     "PROFILE_PATH": "cv/profile.md",
     "OUTPUT_DIR": "output",
 }

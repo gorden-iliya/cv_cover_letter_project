@@ -16,7 +16,7 @@
     "steps": [
       "Remove MAX_VALIDATION_ROUNDS, CHROME_HEADLESS, CV_PATH, PROFILE_PATH and OUTPUT_DIR from .env",
       "Start the app",
-      "Verify the defaults are 2, false, cv/original_cv.md, cv/profile.md and output"
+      "Verify the defaults are 2, false, cv-md/cv.md, cv/profile.md and output"
     ],
     "passes": true
   },
@@ -372,7 +372,7 @@
     "category": "testing",
     "description": "One manual end-to-end run succeeds on a real public job page",
     "steps": [
-      "Fill in .env, cv/original_cv.md and cv/profile.md",
+      "Fill in .env, cv-md/cv.md and cv/profile.md",
       "Run python main.py and paste a real job URL from an allowed site",
       "Verify the job is fetched, tailored, validated, printed and saved",
       "Re-prompt once and verify a new version is created"

@@ -100,7 +100,7 @@ Notes for next:
 Task: F2 "Optional settings fall back to documented defaults" -> passes=true.
 Decisions:
 - no code change; logic + test_optional_defaults already from F1 iteration
-- verified via one-off script outside repo (%TEMP%/verify_f2.py): temp copy of agent/+main.py, .env = .env.example minus 5 optional keys, optional vars stripped from process env -> main.py exit 0; load_settings -> 2, False, cv/original_cv.md, cv/profile.md, output
+- verified via one-off script outside repo (%TEMP%/verify_f2.py): temp copy of agent/+main.py, .env = .env.example minus 5 optional keys, optional vars stripped from process env -> main.py exit 0; load_settings -> 2, False, cv-md/cv.md, cv/profile.md, output
 - main.py does not print the optional values (no spec for startup output) — verified through load_settings in the same temp app
 Files: prd.json, progress.txt
 Notes for next:
@@ -530,7 +530,7 @@ Files: tests/conftest.py, tests/test_no_real_backends.py, prd.json, progress.txt
 BLOCKED - HUMAN INPUT REQUIRED. Only human-verified features left:
 - F26 "Nothing is ever sent or submitted": full run + re-prompt, confirm no email/form/Apply click, agent never says "sent"
 - F34 "~2 min per job (soft)": real public job page, record printed total run time
-- F36 manual e2e: fill real .env (ALLOWED_JOB_SITES + MAX_TOKENS_PER_CALL still missing in real .env; use greenhouse.io not boards.greenhouse.io — see F9 note), cv/original_cv.md, cv/profile.md; python main.py + real URL; re-prompt once -> v2
+- F36 manual e2e: fill real .env (ALLOWED_JOB_SITES + MAX_TOKENS_PER_CALL still missing in real .env; use greenhouse.io not boards.greenhouse.io — see F9 note), cv-md/cv.md, cv/profile.md; python main.py + real URL; re-prompt once -> v2
 Open FYIs for human (from earlier entries): weak model false invented_fact (F15), prompt_injection job can never PASS (F32), validation returned = best attempt not last (F18), same company+role from 2 URLs share folder (F21)
 
 ## 2026-11-07 — greenhouse example fix

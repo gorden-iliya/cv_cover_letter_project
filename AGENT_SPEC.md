@@ -13,7 +13,7 @@ against the job and the user's original CV. It then prints the result and saves 
 The user can refine the result through chat ("make the letter shorter").
 
 ***for whom***
-A single job seeker who runs the agent locally with their own CV (`cv/original_cv.md`) and
+A single job seeker who runs the agent locally with their own CV (`cv-md/cv.md`) and
 profile (`cv/profile.md`).
 
 ***hard rules***
@@ -81,7 +81,7 @@ Generate (or regenerate) the tailored CV and cover letter for a job, validate th
 
 ## Data
 ***inputs***
-- `CV_PATH` (default `cv/original_cv.md`): markdown, read-only.
+- `CV_PATH` (default `cv-md/cv.md`): markdown, read-only.
 - `PROFILE_PATH` (default `cv/profile.md`): markdown with these headings:
   Tone, Language, Length limits, Must mention, Never mention, Target roles, Companies to avoid.
   Missing headings are treated as "no constraint".
